@@ -307,7 +307,7 @@ def generate_response(query: str, use_rag: bool = True) -> dict:
         except Exception as e:
             print(f"RAG retrieval failed: {e}")
     
-    # Step 5: Build the user message with context
+    # Step 5: Build the user message
     if context_str:
         user_message = f"""KONTEKS/CONTEXT from Gus Baha's teachings:
 {context_str}
@@ -317,14 +317,25 @@ PERTANYAAN/QUESTION:
 
 {instruction_lang}"""
     else:
-        user_message = f"""PERTANYAAN/QUESTION:
+        # No context - answer from general knowledge
+        if topic_type == 'followup':
+            user_message = f"""PERTANYAAN LANJUTAN/FOLLOW-UP QUESTION:
 "{query}"
 
-(No specific context available - answer based on general principles of mercy and ease)
+(Tidak ada konteks spesifik. Jawab dengan pengetahuan umum Islam dengan gaya Gus Baha.)
+(No specific context. Answer with general Islamic knowledge in Gus Baha's style.)
+
+{instruction_lang}"""
+        else:
+            user_message = f"""PERTANYAAN/QUESTION:
+"{query}"
+
+(Tidak ada konteks spesifik dari RAG. Jawab berdasarkan prinsip umum rahmat dan kemudahan Islam.)
+(No specific context from RAG. Answer based on general principles of mercy and ease in Islam.)
 
 {instruction_lang}"""
     
-    # Step 6: Build messages array with few-shots
+    # Step 6: Build messages array
     messages = [
         {"role": "system", "content": system_prompt},
         *few_shots,

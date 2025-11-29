@@ -1,13 +1,14 @@
 """
-Gus Baha Chatbot - Main Flask Application
-A warm, merciful Islamic Q&A chatbot inspired by Gus Baha's teaching style.
+Gus App - Islamic Q&A Chatbot
+Inspired by Gus Baha's warm, merciful teaching style.
+
+DISCLAIMER: Ini adalah chatbot edukasi, bukan fatwa resmi.
 """
 
 import os
 from flask import Flask, render_template, request, jsonify
 
 from generator import generate_response
-from critic import validate_response
 
 app = Flask(__name__)
 
@@ -22,9 +23,7 @@ def index():
 def chat():
     """
     Main chat endpoint.
-    
-    Receives user message, generates Gus Baha style response,
-    validates through critic, returns final answer.
+    Returns response with source citations.
     """
     try:
         data = request.get_json() or {}
@@ -36,44 +35,28 @@ def chat():
                 "error": "Pertanyaan kosong / Empty question"
             }), 400
         
-        # Step 1: Generate response with RAG
-        gen_result = generate_response(query, use_rag=True)
+        # Generate response with RAG
+        result = generate_response(query, use_rag=True)
         
-        if gen_result.get("error"):
+        if result.get("error"):
             return jsonify({
                 "success": False,
-                "error": gen_result["error"]
+                "error": result["error"]
             }), 500
         
-        draft_answer = gen_result["response"]
-        language = gen_result.get("language", "id")
-        
-        # Step 2: Validate and potentially rewrite through critic
-        critic_result = validate_response(draft_answer, query, language)
-        
-        final_answer = critic_result["final_answer"]
-        was_rewritten = critic_result["was_rewritten"]
-        
-        # Step 3: Return response
         return jsonify({
             "success": True,
-            "response": final_answer,
-            "language": language,
-            "context_used": gen_result.get("context_used", False),
-            "was_rewritten": was_rewritten
+            "response": result["response"],
+            "language": result.get("language", "id"),
+            "context_used": result.get("context_used", False),
+            "sources": result.get("sources", [])  # Citations for frontend
         })
         
     except Exception as e:
         print(f"Chat error: {e}")
-        
-        # Friendly error message
-        error_msg = "Maaf, ada gangguan teknis. Coba lagi ya."
-        if "API" in str(e) or "key" in str(e).lower():
-            error_msg = "API connection issue. Please try again."
-            
         return jsonify({
             "success": False,
-            "error": error_msg
+            "error": "Maaf, ada gangguan teknis. Coba lagi ya."
         }), 500
 
 
@@ -82,7 +65,7 @@ def health():
     """Health check endpoint."""
     return jsonify({
         "status": "ok",
-        "service": "gus-baha-chatbot"
+        "service": "gus-app"
     })
 
 

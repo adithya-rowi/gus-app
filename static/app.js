@@ -206,8 +206,9 @@ async function sendMessage() {
         hideLoading();
         
         if (data.success && data.response) {
-            // Add bot message with sources
-            addMessage(data.response, 'bot', data.sources || []);
+            // Only show sources if context was actually used
+            const sourcesToShow = data.context_used ? (data.sources || []) : [];
+            addMessage(data.response, 'bot', sourcesToShow);
         } else {
             const errorMsg = data.error || 'Maaf, ada gangguan. Coba lagi ya.';
             addMessage(errorMsg, 'error');

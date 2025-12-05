@@ -1,0 +1,51 @@
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.pem
+secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Replit
+.replit
+replit.nix
+.cache/
+.upm/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Audio files (from ingestion)
+*.mp3
+*.mp4
+*.wav
+*.webm
+
+# Large data files
+*.jsonl
+*_preprocessed.txt

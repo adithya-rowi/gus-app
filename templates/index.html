@@ -106,28 +106,12 @@
             word-break: break-word;
             overflow-wrap: break-word;
         }
-
-        /* Warm Background */
-        .warm-bg {
-            background: linear-gradient(135deg, #FFF8F0 0%, #FFE8D6 100%);
-        }
-
-        /* Subtle Islamic Pattern Overlay */
-        .islamic-pattern {
-            position: absolute;
-            inset: 0;
-            opacity: 0.06;
-            pointer-events: none;
-            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%2392400e' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-        }
     </style>
 </head>
-<body class="warm-bg h-[100dvh] flex items-center justify-center text-stone-900">
+<body class="bg-stone-50 h-[100dvh] flex items-center justify-center text-stone-900">
 
     <!-- Main App Container -->
-    <div id="app" class="relative w-full h-full sm:h-[90vh] sm:max-w-[480px] sm:rounded-[40px] warm-bg sm:shadow-2xl overflow-hidden flex flex-col border border-stone-100">
-        <!-- Islamic Pattern Overlay -->
-        <div class="islamic-pattern"></div>
+    <div id="app" class="relative w-full h-full sm:h-[90vh] sm:max-w-[480px] sm:rounded-[40px] bg-white sm:shadow-2xl overflow-hidden flex flex-col border border-stone-100">
 
         <!-- Header: Minimalist & Sticky -->
         <header class="glass-header absolute top-0 w-full z-20 px-6 py-4 flex justify-between items-center transition-all duration-300">
@@ -180,8 +164,8 @@
                     </button>
                 </div>
 
-                <!-- Support Button (Ghost Style) -->
-                <a href="https://saweria.co/gusapp" target="_blank" rel="noopener noreferrer" class="mt-6 px-3 py-1.5 border-2 border-amber-600 bg-transparent rounded-full text-[11px] font-medium text-amber-700 hover:bg-amber-50 transition-all">
+                <!-- Support Button -->
+                <a href="https://saweria.co/gusapp" target="_blank" rel="noopener noreferrer" class="mt-6 px-4 py-2 border border-amber-300 rounded-full text-xs font-medium text-amber-700 hover:bg-amber-50 hover:border-amber-400 transition-all">
                     ☕ Traktir Gus Ngopi
                 </a>
                 
@@ -191,7 +175,7 @@
         </main>
 
         <!-- Input Area: Floating Capsule -->
-        <footer class="absolute bottom-0 w-full p-4 bg-gradient-to-t from-[#FFE8D6] via-[#FFF8F0]/80 to-transparent pb-8">
+        <footer class="absolute bottom-0 w-full p-4 bg-gradient-to-t from-white via-white to-transparent pb-8">
             <div class="relative max-w-md mx-auto">
                 <div class="absolute inset-0 bg-white/80 rounded-[28px] blur-sm"></div>
                 <div class="relative bg-white border border-stone-200 shadow-xl shadow-stone-200/50 rounded-[28px] flex items-end p-2 transition-shadow focus-within:shadow-2xl focus-within:border-brand-500/30 ring-0">

@@ -23,11 +23,13 @@ def index():
 def chat():
     """
     Main chat endpoint.
+    Accepts conversation history for multi-turn conversations.
     Returns response with source citations.
     """
     try:
         data = request.get_json() or {}
         query = (data.get("message") or "").strip()
+        history = data.get("history") or []  # Conversation history from frontend
         
         if not query:
             return jsonify({
@@ -35,8 +37,8 @@ def chat():
                 "error": "Pertanyaan kosong / Empty question"
             }), 400
         
-        # Generate response with RAG
-        result = generate_response(query, use_rag=True)
+        # Generate response with RAG and conversation history
+        result = generate_response(query, history=history, use_rag=True)
         
         if result.get("error"):
             return jsonify({
@@ -49,7 +51,7 @@ def chat():
             "response": result["response"],
             "language": result.get("language", "id"),
             "context_used": result.get("context_used", False),
-            "sources": result.get("sources", [])  # Citations for frontend
+            "sources": result.get("sources", [])
         })
         
     except Exception as e:

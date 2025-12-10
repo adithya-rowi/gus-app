@@ -221,6 +221,7 @@
         const avatarRing = document.getElementById('avatarRing');
         const welcomeState = document.getElementById('welcomeState');
         let isProcessing = false;
+        let conversationHistory = [];
 
         // --- UI Interactions ---
 
@@ -273,33 +274,43 @@
                 welcomeState.style.display = 'none';
             }
             
-            // 2. Render User Message
+            // 2. Store user message in history
+            conversationHistory.push({ role: "user", content: message });
+            
+            // 3. Render User Message
             appendMessage(message, 'user');
             scrollToBottom();
 
-            // 3. Set Loading State
+            // 4. Set Loading State
             isProcessing = true;
             sendBtn.disabled = true;
             startThinkingAnimation();
             
-            // 4. Real Backend Call
+            // 5. Real Backend Call
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ message }),
+                    body: JSON.stringify({ 
+                        message: message,
+                        history: conversationHistory.slice(0, -1)
+                    }),
                 });
                 
                 const data = await response.json();
                 
                 if (data.success && data.response) {
+                    // Store bot response in history
+                    conversationHistory.push({ role: "assistant", content: data.response });
+                    
                     // Only show sources if context was actually used (not for redirects)
                     const sources = data.context_used ? (data.sources || []) : [];
                     appendMessage(data.response, 'bot', sources);
                 } else {
                     const errorMsg = data.error || 'Maaf, Gus sedang istirahat sejenak. Coba lagi ya.';
+                    conversationHistory.push({ role: "assistant", content: errorMsg });
                     appendMessage(errorMsg, 'bot');
                 }
 

@@ -1,5 +1,6 @@
 """
 Generator - Generates Gus Baha style responses using DeepSeek API.
+Supports conversation history for multi-turn conversations.
 Returns source metadata for citations.
 """
 
@@ -16,25 +17,64 @@ client = OpenAI(
 
 
 def detect_language(text: str) -> str:
-    """Simple language detection."""
+    """
+    Detect if user is writing in Indonesian or English.
+    Mixed language defaults to Indonesian.
+    """
     text_lower = text.lower()
     
+    # Indonesian markers (common words + slang)
     id_markers = [
-        'saya', 'aku', 'gus', 'gimana', 'bagaimana', 'kenapa', 'mengapa',
-        'apa', 'apakah', 'tidak', 'gak', 'nggak', 'bisa', 'dengan', 'yang',
-        'untuk', 'dalam', 'sudah', 'udah', 'belum', 'masih', 'sama', 'dari',
-        'kalau', 'kalo', 'jadi', 'atau', 'tapi', 'dan', 'ini', 'itu'
+        'saya', 'aku', 'kamu', 'kita', 'kami', 'mereka', 'dia',
+        'gus', 'gimana', 'bagaimana', 'kenapa', 'mengapa', 'kapan',
+        'apa', 'apakah', 'siapa', 'dimana', 'kemana',
+        'tidak', 'gak', 'nggak', 'enggak', 'bukan', 'jangan',
+        'bisa', 'boleh', 'harus', 'mau', 'ingin', 'perlu',
+        'dengan', 'yang', 'untuk', 'dalam', 'dari', 'ke', 'di',
+        'sudah', 'udah', 'belum', 'masih', 'akan', 'sedang',
+        'sama', 'atau', 'tapi', 'tetapi', 'dan', 'juga',
+        'ini', 'itu', 'sini', 'situ', 'begini', 'begitu',
+        'kalau', 'kalo', 'jadi', 'karena', 'agar', 'supaya',
+        'ya', 'dong', 'sih', 'kok', 'loh', 'kan', 'deh', 'nih',
+        # Religious terms in Indonesian context
+        'allah', 'tuhan', 'dosa', 'ibadah', 'solat', 'sholat', 'puasa',
+        'ikhlas', 'sabar', 'syukur', 'taubat', 'dzikir', 'doa',
     ]
     
+    # English markers
     en_markers = [
-        'i am', "i'm", 'how do', 'how can', 'what is', 'what are', 'why do',
-        'the', 'and', 'but', 'with', 'have', 'has', 'would', 'could', 'should'
+        "i'm", 'i am', "you're", 'you are', "we're", 'we are',
+        'my', 'your', 'our', 'their', 'his', 'her',
+        'how do', 'how can', 'how to', 'what is', 'what are',
+        'why do', 'why is', 'when is', 'where is', 'who is',
+        'the', 'and', 'but', 'with', 'have', 'has', 'had',
+        'would', 'could', 'should', 'will', 'can', 'may',
+        'this', 'that', 'these', 'those',
+        'please', 'thanks', 'thank you',
+        'how to', 'tell me', 'can you', 'i want', 'i need',
+        'i feel', 'i think', 'i believe',
     ]
     
-    id_score = sum(1 for m in id_markers if m in text_lower)
-    en_score = sum(1 for m in en_markers if m in text_lower)
+    # Count matches
+    id_score = 0
+    en_score = 0
     
-    return 'id' if id_score >= en_score else 'en'
+    for marker in id_markers:
+        if marker in text_lower:
+            id_score += 1
+            # Boost distinctly Indonesian words
+            if marker in ['gus', 'gimana', 'gak', 'nggak', 'kok', 'loh', 'dong', 'sih', 'deh', 'nih']:
+                id_score += 2
+    
+    for marker in en_markers:
+        if marker in text_lower:
+            en_score += 1
+    
+    # Default to Indonesian if unclear (Gus Baha's native language)
+    if en_score > id_score * 1.5:
+        return 'en'
+    else:
+        return 'id'
 
 
 # English system prompt
@@ -61,6 +101,8 @@ OFF-TOPIC (cooking, tech, sports, entertainment, shopping, homework):
 Say: "Ha! That's not my area. I'm just a village scholar—coffee and faith. 😄 But if something's troubling your heart about life or faith, let's talk."
 
 AVOID: Long lectures, academic tone, scaring people, judging, answering off-topic with "Islamic twist".
+
+IMPORTANT: You can see the conversation history. Use it to understand context and follow-up questions. Respond naturally as if continuing a conversation.
 """
 
 FEW_SHOTS_EN = [
@@ -93,18 +135,29 @@ Anything on your mind?"""
 ]
 
 
-def generate_response(query: str, use_rag: bool = True) -> dict:
+def generate_response(query: str, history: list = None, use_rag: bool = True) -> dict:
     """
-    Generate Gus Baha response with source citations.
-    Does NOT show sources for off-topic redirects.
+    Generate Gus Baha response with conversation history support.
+    
+    Args:
+        query: Current user message
+        history: List of previous messages [{"role": "user/assistant", "content": "..."}]
+        use_rag: Whether to use RAG for context
+    
+    Returns:
+        dict with response, sources, language, etc.
     """
+    if history is None:
+        history = []
     
     # Step 1: Detect language
     lang = detect_language(query)
     
-    # Step 2: Select prompts
+    # Step 2: Select prompts based on language
     if lang == 'id':
-        system_prompt = SYSTEM_PROMPT
+        system_prompt = SYSTEM_PROMPT + """
+
+PENTING: Kamu bisa melihat riwayat percakapan. Gunakan untuk memahami konteks dan pertanyaan lanjutan. Jawab secara natural seperti melanjutkan percakapan."""
         few_shots = FEW_SHOTS
         instruction = """INSTRUKSI:
 - Jawab gaya Gus Baha: santai, hangat, ada cerita
@@ -112,7 +165,9 @@ def generate_response(query: str, use_rag: bool = True) -> dict:
 - Buat penanya TENANG
 - Pakai: wong, kok, loh, gak, segampang itu, gitu aja kok repot
 - Kalau topik di luar Islam/kehidupan (masak, coding, olahraga, dll) → redirect dengan hangat
-- BAHASA INDONESIA"""
+- Perhatikan konteks percakapan sebelumnya
+- GUNAKAN SEMUA KONTEKS yang diberikan (baik bahasa Indonesia maupun Inggris)
+- JAWAB DALAM BAHASA INDONESIA"""
     else:
         system_prompt = SYSTEM_PROMPT_EN
         few_shots = FEW_SHOTS_EN
@@ -122,44 +177,58 @@ def generate_response(query: str, use_rag: bool = True) -> dict:
 - Make questioner feel CALM
 - Use: "look," "here's the thing," "don't overcomplicate it"
 - If off-topic (cooking, tech, sports, etc) → warmly redirect
-- ENGLISH"""
+- Pay attention to conversation history for context
+- USE ALL PROVIDED CONTEXT (both Indonesian and English sources)
+- ANSWER IN ENGLISH"""
     
-    # Step 3: Get RAG context
+    # Step 3: Get RAG context (retrieve more to get both languages)
     chunks = []
     context_str = ""
     sources = []
     
     if use_rag:
         try:
-            chunks = retrieve_context(query, top_k=6)
+            # Retrieve more chunks to capture both Indonesian and English content
+            chunks = retrieve_context(query, top_k=8)
             if chunks:
-                context_str = format_context_for_prompt(chunks)
+                context_str = format_context_for_prompt(chunks, max_chars=3500)
                 sources = get_unique_sources(chunks)
         except Exception as e:
             print(f"RAG error: {e}")
     
-    # Step 4: Build message
-    if context_str:
-        user_message = f"""KONTEKS dari Gus Baha:
-{context_str}
-
-PERTANYAAN: "{query}"
-
-{instruction}"""
-    else:
-        user_message = f"""PERTANYAAN: "{query}"
-
-(Tidak ada konteks spesifik)
-
-{instruction}"""
-    
-    # Step 5: Generate
+    # Step 4: Build conversation messages
     messages = [
         {"role": "system", "content": system_prompt},
         *few_shots,
-        {"role": "user", "content": user_message}
     ]
     
+    # Add conversation history (limit to last 6 exchanges = 12 messages)
+    if history:
+        recent_history = history[-12:]
+        for msg in recent_history:
+            messages.append({
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", "")
+            })
+    
+    # Step 5: Build current user message with RAG context
+    if context_str:
+        user_message = f"""KONTEKS dari pengajaran Gus Baha (gunakan semua, baik Indonesia maupun Inggris):
+{context_str}
+
+PERTANYAAN SEKARANG: "{query}"
+
+{instruction}"""
+    else:
+        user_message = f"""PERTANYAAN SEKARANG: "{query}"
+
+(Tidak ada konteks spesifik dari RAG)
+
+{instruction}"""
+    
+    messages.append({"role": "user", "content": user_message})
+    
+    # Step 6: Generate response
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
@@ -172,29 +241,21 @@ PERTANYAAN: "{query}"
         
         answer = response.choices[0].message.content.strip()
         
-        # Step 6: Detect if response is a redirect (off-topic)
-        # If the answer contains redirect phrases, don't show sources
+        # Step 7: Detect if response is a redirect (off-topic)
         redirect_phrases_id = [
-            "saya gak pinter",
-            "saya gak ngerti", 
-            "saya gak jago",
-            "bisanya cuma ngaji",
-            "kiai kampung",
-            "bukan keahlian saya",
+            "saya gak pinter", "saya gak ngerti", "saya gak jago",
+            "bisanya cuma ngaji", "kiai kampung", "bukan keahlian saya",
             "di luar kemampuan"
         ]
         redirect_phrases_en = [
-            "not my thing",
-            "not my area",
-            "just a village scholar",
-            "coffee and faith",
-            "not really my expertise"
+            "not my thing", "not my area", "just a village scholar",
+            "coffee and faith", "not really my expertise"
         ]
         
         answer_lower = answer.lower()
         is_redirect = any(phrase in answer_lower for phrase in redirect_phrases_id + redirect_phrases_en)
         
-        # If it's a redirect, don't return sources
+        # If redirect, don't return sources
         if is_redirect:
             return {
                 "response": answer,

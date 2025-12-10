@@ -19,62 +19,35 @@ client = OpenAI(
 def detect_language(text: str) -> str:
     """
     Detect if user is writing in Indonesian or English.
-    Mixed language defaults to Indonesian.
+    Checks Indonesian words FIRST, then English patterns.
+    Defaults to Indonesian.
     """
     text_lower = text.lower()
     
-    # Indonesian markers (common words + slang)
-    id_markers = [
-        'saya', 'aku', 'kamu', 'kita', 'kami', 'mereka', 'dia',
-        'gus', 'gimana', 'bagaimana', 'kenapa', 'mengapa', 'kapan',
-        'apa', 'apakah', 'siapa', 'dimana', 'kemana',
-        'tidak', 'gak', 'nggak', 'enggak', 'bukan', 'jangan',
-        'bisa', 'boleh', 'harus', 'mau', 'ingin', 'perlu',
-        'dengan', 'yang', 'untuk', 'dalam', 'dari', 'ke', 'di',
-        'sudah', 'udah', 'belum', 'masih', 'akan', 'sedang',
-        'sama', 'atau', 'tapi', 'tetapi', 'dan', 'juga',
-        'ini', 'itu', 'sini', 'situ', 'begini', 'begitu',
-        'kalau', 'kalo', 'jadi', 'karena', 'agar', 'supaya',
-        'ya', 'dong', 'sih', 'kok', 'loh', 'kan', 'deh', 'nih',
-        # Religious terms in Indonesian context
-        'allah', 'tuhan', 'dosa', 'ibadah', 'solat', 'sholat', 'puasa',
-        'ikhlas', 'sabar', 'syukur', 'taubat', 'dzikir', 'doa',
-    ]
+    # Indonesian words - check these FIRST (word boundary matching)
+    id_words = ['saya', 'aku', 'gimana', 'bagaimana', 'kenapa', 'apa', 'apakah', 
+                'tidak', 'gak', 'nggak', 'bisa', 'dengan', 'yang', 'untuk', 
+                'sudah', 'udah', 'belum', 'kalau', 'kalo', 'jadi', 'atau', 
+                'tapi', 'dan', 'ini', 'itu', 'ya', 'dong', 'sih', 'kok', 
+                'loh', 'deh', 'nih', 'kan', 'gus', 'allah', 'tuhan', 'dosa', 'ibadah']
     
-    # English markers
-    en_markers = [
-        "i'm", 'i am', "you're", 'you are', "we're", 'we are',
-        'my', 'your', 'our', 'their', 'his', 'her',
-        'how do', 'how can', 'how to', 'what is', 'what are',
-        'why do', 'why is', 'when is', 'where is', 'who is',
-        'the', 'and', 'but', 'with', 'have', 'has', 'had',
-        'would', 'could', 'should', 'will', 'can', 'may',
-        'this', 'that', 'these', 'those',
-        'please', 'thanks', 'thank you',
-        'how to', 'tell me', 'can you', 'i want', 'i need',
-        'i feel', 'i think', 'i believe',
-    ]
+    # Check Indonesian words first (must match as whole word)
+    words_in_text = text_lower.split()
+    for word in id_words:
+        if word in words_in_text:
+            return 'id'
     
-    # Count matches
-    id_score = 0
-    en_score = 0
+    # English patterns - check these second (substring matching)
+    en_patterns = ["i'm", "i am", "how do", "how can", "what is", "why do", 
+                   "does ", "do you", "can you", "tell me", "please", "thank", 
+                   "my prayer", "my prayers", "listen to", "even though"]
     
-    for marker in id_markers:
-        if marker in text_lower:
-            id_score += 1
-            # Boost distinctly Indonesian words
-            if marker in ['gus', 'gimana', 'gak', 'nggak', 'kok', 'loh', 'dong', 'sih', 'deh', 'nih']:
-                id_score += 2
+    for pattern in en_patterns:
+        if pattern in text_lower:
+            return 'en'
     
-    for marker in en_markers:
-        if marker in text_lower:
-            en_score += 1
-    
-    # Default to Indonesian if unclear (Gus Baha's native language)
-    if en_score > id_score * 1.5:
-        return 'en'
-    else:
-        return 'id'
+    # Default to Indonesian
+    return 'id'
 
 
 # English system prompt
@@ -240,6 +213,9 @@ PERTANYAAN SEKARANG: "{query}"
         )
         
         answer = response.choices[0].message.content.strip()
+        
+        # Clean markdown symbols (asterisks and underscores)
+        answer = answer.replace('*', '').replace('_', '')
         
         # Step 7: Detect if response is a redirect (off-topic)
         redirect_phrases_id = [

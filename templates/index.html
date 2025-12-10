@@ -304,6 +304,7 @@
                 if (data.success && data.response) {
                     // Store bot response in history
                     conversationHistory.push({ role: "assistant", content: data.response });
+                    if (conversationHistory.length > 12) { conversationHistory = conversationHistory.slice(-12); }
                     
                     // Only show sources if context was actually used (not for redirects)
                     const sources = data.context_used ? (data.sources || []) : [];
@@ -311,6 +312,7 @@
                 } else {
                     const errorMsg = data.error || 'Maaf, Gus sedang istirahat sejenak. Coba lagi ya.';
                     conversationHistory.push({ role: "assistant", content: errorMsg });
+                    if (conversationHistory.length > 12) { conversationHistory = conversationHistory.slice(-12); }
                     appendMessage(errorMsg, 'bot');
                 }
 
@@ -499,6 +501,7 @@
         window.newChat = () => {
             if (chatArea.children.length > 1 || welcomeState.style.display === 'none') {
                 if (confirm('Mulai sesi baru?')) {
+                    conversationHistory = [];
                     location.reload();
                 }
             }

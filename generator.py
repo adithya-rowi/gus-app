@@ -19,35 +19,55 @@ client = OpenAI(
 def detect_language(text: str) -> str:
     """
     Detect if user is writing in Indonesian or English.
-    Checks Indonesian words FIRST, then English patterns.
-    Defaults to Indonesian.
+    Uses scoring approach - counts matches for both languages and compares.
+    Defaults to Indonesian if unclear.
     """
     text_lower = text.lower()
+    words_in_text = text_lower.split()
     
-    # Indonesian words - check these FIRST (word boundary matching)
-    id_words = ['saya', 'aku', 'gimana', 'bagaimana', 'kenapa', 'apa', 'apakah', 
+    # Indonesian-ONLY words (exclude ambiguous terms like allah, gus, doa that appear in both)
+    id_words = ['saya', 'aku', 'gimana', 'bagaimana', 'kenapa', 'apakah', 
                 'tidak', 'gak', 'nggak', 'bisa', 'dengan', 'yang', 'untuk', 
                 'sudah', 'udah', 'belum', 'kalau', 'kalo', 'jadi', 'atau', 
-                'tapi', 'dan', 'ini', 'itu', 'ya', 'dong', 'sih', 'kok', 
-                'loh', 'deh', 'nih', 'kan', 'gus', 'allah', 'tuhan', 'dosa', 'ibadah']
+                'tapi', 'ini', 'itu', 'dong', 'sih', 'kok', 'loh', 'deh', 
+                'nih', 'kan', 'apakah', 'mengapa', 'kapan', 'dimana', 'siapa',
+                'ikhlas', 'sabar', 'syukur', 'taubat', 'solat', 'sholat', 'puasa']
     
-    # Check Indonesian words first (must match as whole word)
-    words_in_text = text_lower.split()
-    for word in id_words:
-        if word in words_in_text:
-            return 'id'
-    
-    # English patterns - check these second (substring matching)
+    # English patterns (phrases and words that indicate English)
     en_patterns = ["i'm", "i am", "how do", "how can", "what is", "why do", 
-                   "does ", "do you", "can you", "tell me", "please", "thank", 
-                   "my prayer", "my prayers", "listen to", "even though"]
+                   "does ", "do you", "can you", "tell me", "please", "thank",
+                   "my prayer", "my prayers", "listen to", "even though",
+                   "i feel", "i think", "i need", "i want", "really", 
+                   "though", "because", "should", "would", "could",
+                   "perfect", "person", "still", "always", "never"]
     
+    # Count Indonesian word matches (whole word matching)
+    id_score = 0
+    for word in id_words:
+        # Strip punctuation from words in text for matching
+        for text_word in words_in_text:
+            clean_word = ''.join(c for c in text_word if c.isalnum())
+            if clean_word == word:
+                id_score += 1
+                # Boost distinctly Indonesian slang
+                if word in ['gimana', 'gak', 'nggak', 'kok', 'loh', 'dong', 'sih', 'deh', 'nih', 'kan']:
+                    id_score += 2
+    
+    # Count English pattern matches (substring matching)
+    en_score = 0
     for pattern in en_patterns:
         if pattern in text_lower:
-            return 'en'
+            en_score += 1
     
-    # Default to Indonesian
-    return 'id'
+    # Compare scores - English needs higher score since Indonesian is default
+    if en_score > 0 and id_score == 0:
+        return 'en'
+    elif id_score > 0 and en_score == 0:
+        return 'id'
+    elif en_score > id_score:
+        return 'en'
+    else:
+        return 'id'
 
 
 # English system prompt

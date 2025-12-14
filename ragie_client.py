@@ -7,6 +7,7 @@ Supports: YouTube videos, books, Hawa's Blog PDFs
 import os
 import re
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 RAGIE_API_KEY = os.environ.get("RAGIE_API_KEY")
 RAGIE_BASE_URL = "https://api.ragie.ai"
@@ -152,7 +153,8 @@ def _default_source() -> dict:
 
 def retrieve_context(query: str, top_k: int = 6) -> list[dict]:
     """
-    Retrieve relevant chunks from Ragie with source metadata.
+    Retrieve relevant chunks from Ragie with bilingual support.
+    Searches in both original language and English keywords simultaneously.
     """
     if not RAGIE_API_KEY:
         print("Warning: RAGIE_API_KEY not set")
@@ -163,41 +165,104 @@ def retrieve_context(query: str, top_k: int = 6) -> list[dict]:
         "Content-Type": "application/json"
     }
     
-    payload = {
-        "query": query,
-        "top_k": top_k,
-        "partition": "gus-baha"
+    def search_ragie(search_query: str, num_results: int) -> list[dict]:
+        """Helper function to search Ragie."""
+        payload = {
+            "query": search_query,
+            "top_k": num_results,
+            "partition": "gus-baha"
+        }
+        try:
+            response = requests.post(
+                f"{RAGIE_BASE_URL}/retrievals",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("scored_chunks", [])
+        except requests.exceptions.RequestException as e:
+            print(f"Ragie retrieval error: {e}")
+            return []
+    
+    # Create English keywords from common Indonesian religious terms
+    indo_to_eng = {
+        'ikhlas': 'sincerity', 'dosa': 'sin forgiveness', 'taubat': 'repentance',
+        'sabar': 'patience', 'syukur': 'gratitude', 'takut': 'fear',
+        'mati': 'death', 'sholat': 'prayer', 'solat': 'prayer', 'puasa': 'fasting',
+        'sedekah': 'charity', 'rezeki': 'sustenance', 'doa': 'supplication',
+        'ampun': 'forgiveness mercy', 'surga': 'paradise', 'neraka': 'hell',
+        'akhirat': 'afterlife', 'hati': 'heart soul', 'iman': 'faith',
+        'ibadah': 'worship', 'dzikir': 'remembrance', 'gelisah': 'anxiety',
+        'tenang': 'peace calm', 'sedih': 'sadness grief', 'maaf': 'forgiveness',
+        'ujian': 'trial test', 'cobaan': 'hardship', 'hidayah': 'guidance',
+        'berkah': 'blessing', 'ridho': 'acceptance', 'tawakkal': 'trust God',
+        'allah': 'God Allah', 'tuhan': 'God Lord', 'nabi': 'prophet',
+        'munafik': 'hypocrite hypocrisy', 'riya': 'showing off',
+        'sombong': 'arrogance pride', 'rendah': 'humble', 'cinta': 'love',
+        'bersyukur': 'grateful', 'khusyuk': 'focus concentration',
+        'malu': 'shame shy', 'tobat': 'repent', 'zina': 'adultery',
+        'ghibah': 'backbiting gossip', 'hasad': 'envy jealousy',
+        'dendam': 'grudge revenge', 'marah': 'anger angry',
+        'bahagia': 'happiness happy', 'tentram': 'tranquil peaceful'
     }
     
-    try:
-        response = requests.post(
-            f"{RAGIE_BASE_URL}/retrievals",
-            headers=headers,
-            json=payload,
-            timeout=10
-        )
-        response.raise_for_status()
-        
-        data = response.json()
-        chunks = data.get("scored_chunks", [])
-        
-        results = []
-        for chunk in chunks:
-            doc_name = chunk.get("document_name", "unknown")
-            source_meta = get_source_metadata(doc_name)
+    # Build English query from Indonesian terms found
+    query_lower = query.lower()
+    english_terms = []
+    for indo, eng in indo_to_eng.items():
+        if indo in query_lower:
+            english_terms.append(eng)
+    
+    # If we found Indonesian terms, create English query
+    if english_terms:
+        english_query = " ".join(english_terms)
+    else:
+        english_query = None
+    
+    # Run searches in PARALLEL (no extra delay!)
+    all_chunks = []
+    
+    if english_query:
+        # Search both languages simultaneously
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_original = executor.submit(search_ragie, query, top_k // 2 + 1)
+            future_english = executor.submit(search_ragie, english_query, top_k // 2 + 1)
             
-            results.append({
-                "text": chunk.get("text", ""),
-                "score": chunk.get("score", 0),
-                "document_name": doc_name,
-                "source": source_meta
-            })
+            chunks_original = future_original.result()
+            chunks_english = future_english.result()
         
-        return results
+        all_chunks = chunks_original + chunks_english
+    else:
+        # No Indonesian terms found, just search original
+        all_chunks = search_ragie(query, top_k)
+    
+    # Deduplicate by text content (keep higher score)
+    seen_texts = {}
+    for chunk in all_chunks:
+        text = chunk.get("text", "")[:200]  # First 200 chars as key
+        score = chunk.get("score", 0)
+        if text not in seen_texts or score > seen_texts[text].get("score", 0):
+            seen_texts[text] = chunk
+    
+    # Sort by score and take top_k
+    unique_chunks = sorted(seen_texts.values(), key=lambda x: x.get("score", 0), reverse=True)[:top_k]
+    
+    # Add source metadata
+    results = []
+    for chunk in unique_chunks:
+        doc_name = chunk.get("document_name", "unknown")
+        source_meta = get_source_metadata(doc_name)
         
-    except requests.exceptions.RequestException as e:
-        print(f"Ragie retrieval error: {e}")
-        return []
+        results.append({
+            "text": chunk.get("text", ""),
+            "score": chunk.get("score", 0),
+            "document_name": doc_name,
+            "source": source_meta
+        })
+    
+    return results
 
 
 def format_context_for_prompt(chunks: list[dict], max_chars: int = 3000) -> str:

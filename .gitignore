@@ -49,3 +49,6 @@ temp/
 # Large data files
 *.jsonl
 *_preprocessed.txt
+
+# Attached assets (uploaded files)
+attached_assets/

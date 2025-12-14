@@ -19,64 +19,41 @@ client = OpenAI(
 def detect_language(text: str) -> str:
     """
     Detect if user is writing in Indonesian or English.
-    Uses scoring approach - counts matches for both languages and compares.
-    Defaults to Indonesian if unclear.
+    Prioritizes sentence structure over individual words.
     """
     text_lower = text.lower()
-    words_in_text = text_lower.split()
     
-    # Indonesian-ONLY words (exclude ambiguous terms like allah, gus, doa that appear in both)
-    id_words = ['saya', 'aku', 'gimana', 'bagaimana', 'kenapa', 'apakah', 
-                'tidak', 'gak', 'nggak', 'bisa', 'dengan', 'yang', 'untuk', 
-                'sudah', 'udah', 'belum', 'kalau', 'kalo', 'jadi', 'atau', 
-                'tapi', 'ini', 'itu', 'dong', 'sih', 'kok', 'loh', 'deh', 
-                'nih', 'kan', 'apakah', 'mengapa', 'kapan', 'dimana', 'siapa',
-                'ikhlas', 'sabar', 'syukur', 'taubat', 'solat', 'sholat', 'puasa']
+    # FIRST: Check for clear English sentence patterns (these override everything)
+    english_sentence_patterns = [
+        "what if", "what is", "what are", "what does", "what do",
+        "how to", "how do", "how can", "how is", "how are",
+        "why do", "why is", "why are", "why does",
+        "am i", "do i", "can i", "should i", "would i", "could i",
+        "i am", "i'm", "i have", "i feel", "i think", "i want", "i need",
+        "is it", "is there", "are there", "does it", "do you",
+        "can you", "tell me", "help me", "please", "thank you",
+        "even though", "what about", "how about"
+    ]
     
-    # English patterns (phrases and words that indicate English)
-    en_patterns = ["i'm", "i am", "how do", "how can", "how to", "what is", 
-                   "what are", "what does", "why do", "why is", "why does",
-                   "does ", "do you", "do i", "can you", "can i", "tell me", 
-                   "please", "thank", "my prayer", "my prayers", "listen to", 
-                   "even though", "i feel", "i think", "i need", "i want", 
-                   "really", "though", "because", "should", "would", "could",
-                   "perfect", "person", "still", "always", "never", "great",
-                   "raise", "daughter", "son", "child", "children", "family",
-                   "feeling", "scared", "afraid", "worried", "anxious", "happy",
-                   "forgive", "forgiveness", "sincerity", "sincere", "humble",
-                   "pray", "prayer", "faith", "believe", "belief", "trust",
-                   "mercy", "merciful", "guidance", "guide", "help me",
-                   "struggling", "struggle", "difficult", "hard", "easy",
-                   "understand", "meaning", "purpose", "life", "death",
-                   "sin", "sins", "repent", "repentance", "heart", "soul"]
-    
-    # Count Indonesian word matches (whole word matching)
-    id_score = 0
-    for word in id_words:
-        # Strip punctuation from words in text for matching
-        for text_word in words_in_text:
-            clean_word = ''.join(c for c in text_word if c.isalnum())
-            if clean_word == word:
-                id_score += 1
-                # Boost distinctly Indonesian slang
-                if word in ['gimana', 'gak', 'nggak', 'kok', 'loh', 'dong', 'sih', 'deh', 'nih', 'kan']:
-                    id_score += 2
-    
-    # Count English pattern matches (substring matching)
-    en_score = 0
-    for pattern in en_patterns:
+    for pattern in english_sentence_patterns:
         if pattern in text_lower:
-            en_score += 1
+            return 'en'
     
-    # Compare scores - English needs higher score since Indonesian is default
-    if en_score > 0 and id_score == 0:
-        return 'en'
-    elif id_score > 0 and en_score == 0:
-        return 'id'
-    elif en_score > id_score:
-        return 'en'
-    else:
-        return 'id'
+    # SECOND: Check for clear Indonesian sentence patterns
+    indonesian_sentence_patterns = [
+        "gimana", "bagaimana", "kenapa", "mengapa", "apakah",
+        "apa itu", "apa yang", "siapa yang", "kapan", "dimana",
+        "saya ", "aku ", "gak ", "nggak ", "tidak ",
+        "dong", "sih", "kok", "loh", "deh", "nih", "kan",
+        "gitu", "gini", "banget", "udah", "sudah", "belum"
+    ]
+    
+    for pattern in indonesian_sentence_patterns:
+        if pattern in text_lower:
+            return 'id'
+    
+    # THIRD: If no clear pattern, default to Indonesian
+    return 'id'
 
 
 # English system prompt

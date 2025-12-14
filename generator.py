@@ -34,12 +34,21 @@ def detect_language(text: str) -> str:
                 'ikhlas', 'sabar', 'syukur', 'taubat', 'solat', 'sholat', 'puasa']
     
     # English patterns (phrases and words that indicate English)
-    en_patterns = ["i'm", "i am", "how do", "how can", "what is", "why do", 
-                   "does ", "do you", "can you", "tell me", "please", "thank",
-                   "my prayer", "my prayers", "listen to", "even though",
-                   "i feel", "i think", "i need", "i want", "really", 
-                   "though", "because", "should", "would", "could",
-                   "perfect", "person", "still", "always", "never"]
+    en_patterns = ["i'm", "i am", "how do", "how can", "how to", "what is", 
+                   "what are", "what does", "why do", "why is", "why does",
+                   "does ", "do you", "do i", "can you", "can i", "tell me", 
+                   "please", "thank", "my prayer", "my prayers", "listen to", 
+                   "even though", "i feel", "i think", "i need", "i want", 
+                   "really", "though", "because", "should", "would", "could",
+                   "perfect", "person", "still", "always", "never", "great",
+                   "raise", "daughter", "son", "child", "children", "family",
+                   "feeling", "scared", "afraid", "worried", "anxious", "happy",
+                   "forgive", "forgiveness", "sincerity", "sincere", "humble",
+                   "pray", "prayer", "faith", "believe", "belief", "trust",
+                   "mercy", "merciful", "guidance", "guide", "help me",
+                   "struggling", "struggle", "difficult", "hard", "easy",
+                   "understand", "meaning", "purpose", "life", "death",
+                   "sin", "sins", "repent", "repentance", "heart", "soul"]
     
     # Count Indonesian word matches (whole word matching)
     id_score = 0

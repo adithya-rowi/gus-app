@@ -71,6 +71,26 @@ def health():
     })
 
 
+@app.route("/links")
+def links():
+    """Link-in-bio page for Instagram."""
+    return render_template("links.html")
+
+
+@app.route("/analytics", methods=["POST"])
+def analytics():
+    """Simple analytics endpoint for tracking events."""
+    try:
+        data = request.get_json() or {}
+        event = data.get("event", "unknown")
+        timestamp = data.get("timestamp", 0)
+        print(f"[Analytics] {event} at {timestamp}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Analytics error: {e}")
+        return jsonify({"success": False}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)

@@ -200,6 +200,58 @@
             <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
             <span>Quote siap dibagikan!</span>
         </div>
+
+        <!-- Donation Modal -->
+        <div id="donationModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeDonationModal()"></div>
+            <div class="relative bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl animate-slide-up">
+                <button onclick="closeDonationModal()" class="absolute top-4 right-4 text-stone-400 hover:text-stone-600">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+                
+                <div class="text-center mb-6">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-full overflow-hidden border-2 border-amber-200">
+                        <img src="/static/gus-avatar.png" alt="Gus" class="w-full h-full object-cover">
+                    </div>
+                    <p class="text-stone-700 text-sm leading-relaxed">
+                        Alhamdulillah, senang bisa menemani 🙏<br><br>
+                        Gus Ahab ini proyek kecil yang dibuat untuk bantu orang ngobrol soal iman tanpa takut dan tanpa dihakimi.<br><br>
+                        Kalau tadi bermanfaat, kamu boleh <span class="text-amber-600 font-medium">traktir Gus ngopi ☕</span>
+                    </p>
+                </div>
+                
+                <div class="flex flex-col gap-2">
+                    <a href="https://saweria.co/gusapp" target="_blank" rel="noopener noreferrer" onclick="logEvent('donation_modal_clicked')" class="w-full py-3 px-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl text-center text-sm font-medium text-amber-800 transition-colors">
+                        ☕ Kopi Hitam — Rp 10.000
+                    </a>
+                    <a href="https://saweria.co/gusapp" target="_blank" rel="noopener noreferrer" onclick="logEvent('donation_modal_clicked')" class="w-full py-3 px-4 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl text-center text-sm font-medium text-amber-800 transition-colors">
+                        ☕☕ Kopi Susu — Rp 25.000
+                    </a>
+                    <a href="https://saweria.co/gusapp" target="_blank" rel="noopener noreferrer" onclick="logEvent('donation_modal_clicked')" class="w-full py-3 px-4 bg-amber-200 hover:bg-amber-300 border border-amber-400 rounded-xl text-center text-sm font-medium text-amber-900 transition-colors">
+                        ☕☕☕ Ngopi Berjamaah — Rp 50.000
+                    </a>
+                    <button onclick="closeDonationModal()" class="w-full py-3 px-4 text-stone-400 hover:text-stone-600 text-sm transition-colors mt-2">
+                        Nanti dulu
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Like Prompt Bottom Sheet -->
+        <div id="likePrompt" class="fixed bottom-0 left-0 right-0 z-50 transform translate-y-full transition-transform duration-300">
+            <div class="bg-white rounded-t-3xl shadow-2xl p-6 max-w-md mx-auto border-t border-stone-100">
+                <p class="text-stone-600 text-sm text-center mb-4">
+                    Kalau mau,<br>kamu bisa <span class="text-amber-600 font-medium">traktir Gus ngopi ☕</span><br>
+                    <span class="text-stone-400">supaya Gus bisa terus nemenin orang lain.</span>
+                </p>
+                <div class="flex gap-3">
+                    <button onclick="hideLikePrompt()" class="flex-1 py-2.5 text-stone-400 text-sm">Tutup</button>
+                    <a href="https://saweria.co/gusapp" target="_blank" rel="noopener noreferrer" onclick="logEvent('donation_cta_clicked'); hideLikePrompt();" class="flex-1 py-2.5 bg-amber-100 hover:bg-amber-200 rounded-xl text-center text-sm font-medium text-amber-800 transition-colors">
+                        ☕ Traktir
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Application Logic -->
@@ -212,6 +264,8 @@
         const welcomeState = document.getElementById('welcomeState');
         let isProcessing = false;
         let conversationHistory = [];
+        let questionCount = 0;
+        let donationModalShown = false;
 
         // --- UI Interactions ---
 
@@ -299,6 +353,15 @@
                     // Only show sources if context was actually used (not for redirects)
                     const sources = data.context_used ? (data.sources || []) : [];
                     appendMessage(data.response, 'bot', sources);
+                    
+                    // Log analytics
+                    logEvent('answer_rendered');
+                    
+                    // Increment question count and check for donation modal
+                    questionCount++;
+                    if (questionCount === 3 && !donationModalShown && !isDonationModalDismissed()) {
+                        setTimeout(() => showDonationModal(), 1000);
+                    }
                 } else {
                     const errorMsg = data.error || 'Maaf, Gus sedang istirahat sejenak. Coba lagi ya.';
                     conversationHistory.push({ role: "assistant", content: errorMsg });
@@ -387,14 +450,25 @@
                                 </div>
                                 ${sourcesHtml}
                                 
-                                <!-- Share Button -->
-                                <div class="mt-4 flex justify-end">
+                                <!-- Action Buttons -->
+                                <div class="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
+                                    <button onclick="likeAnswer(this)" class="flex items-center gap-1.5 text-xs font-medium text-stone-400 hover:text-red-500 transition-colors like-btn">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+                                        Kena!
+                                    </button>
                                     <button onclick="shareQuote(this)" class="flex items-center gap-1.5 text-xs font-medium text-stone-400 hover:text-brand-600 transition-colors">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
                                         Share
                                     </button>
                                 </div>
                             </div>
+                            
+                            <!-- Inline Donation CTA -->
+                            <a href="https://saweria.co/gusapp" target="_blank" rel="noopener noreferrer" onclick="logEvent('donation_cta_clicked')" class="text-xs text-stone-400 hover:text-amber-600 transition-colors mt-1 leading-relaxed">
+                                Kalau jawaban ini bikin kamu senyum atau agak enteng,<br>
+                                boleh <span class="text-amber-600 font-medium">traktir Gus ngopi ☕</span><br>
+                                <span class="text-stone-300">Biar Gus bisa terus nemenin orang-orang yang lagi mumet.</span>
+                            </a>
                         </div>
                     </div>
                 `;
@@ -496,6 +570,68 @@
                 }
             }
         };
+
+        // --- Donation Modal Functions ---
+        function showDonationModal() {
+            const modal = document.getElementById('donationModal');
+            modal.classList.remove('hidden');
+            donationModalShown = true;
+            logEvent('donation_modal_shown');
+        }
+
+        function closeDonationModal() {
+            const modal = document.getElementById('donationModal');
+            modal.classList.add('hidden');
+            // Remember dismissal for 24 hours
+            localStorage.setItem('donationModalDismissed', Date.now());
+        }
+
+        function isDonationModalDismissed() {
+            const dismissed = localStorage.getItem('donationModalDismissed');
+            if (!dismissed) return false;
+            const hoursSince = (Date.now() - parseInt(dismissed)) / (1000 * 60 * 60);
+            return hoursSince < 24;
+        }
+
+        // --- Like/Heart Button ---
+        window.likeAnswer = (btn) => {
+            // Animate the button
+            btn.classList.add('text-red-500');
+            btn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+                Kena!
+            `;
+            btn.disabled = true;
+            
+            // Show like prompt after a short delay
+            setTimeout(() => {
+                showLikePrompt();
+            }, 500);
+        };
+
+        function showLikePrompt() {
+            const prompt = document.getElementById('likePrompt');
+            prompt.classList.remove('translate-y-full');
+        }
+
+        function hideLikePrompt() {
+            const prompt = document.getElementById('likePrompt');
+            prompt.classList.add('translate-y-full');
+        }
+        window.hideLikePrompt = hideLikePrompt;
+
+        // --- Analytics ---
+        function logEvent(eventName) {
+            console.log(`[Analytics] ${eventName}`);
+            // Could send to backend or analytics service
+            try {
+                fetch('/analytics', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ event: eventName, timestamp: Date.now() })
+                }).catch(() => {});
+            } catch (e) {}
+        }
 
         // Focus input on load (desktop only)
         if (window.innerWidth >= 640) {

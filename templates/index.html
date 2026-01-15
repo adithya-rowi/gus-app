@@ -458,16 +458,15 @@
 
         // Generate Share Image for Instagram Story
         window.generateShareImage = async (btn) => {
-            // Find user question and Gus answer
             const chatContainer = document.getElementById('chatArea');
             const messages = chatContainer.querySelectorAll(':scope > div');
             const botMessageDiv = btn.closest('.flex.justify-start').parentElement;
             const botIndex = Array.from(messages).indexOf(botMessageDiv);
 
-            let userQuestion = 'Pertanyaan untuk Gus...';
+            let userQuestion = '';
             let gusAnswer = '';
 
-            // Get previous message (user's question)
+            // Get user's question
             if (botIndex > 0) {
                 const userDiv = messages[botIndex - 1];
                 const userBubble = userDiv.querySelector('.bg-stone-900');
@@ -482,11 +481,21 @@
                 gusAnswer = answerEl.innerText.trim();
             }
 
-            // Truncate for hook effect
-            const maxQ = 50;
-            const maxA = 200;
-            if (userQuestion.length > maxQ) userQuestion = userQuestion.substring(0, maxQ-3) + '...';
-            if (gusAnswer.length > maxA) gusAnswer = gusAnswer.substring(0, maxA-3) + '...';
+            // Extract best part - prefer second paragraph or last part, not first
+            const paragraphs = gusAnswer.split(/\n\n|\. (?=[A-Z])/);
+            let bestPart = gusAnswer;
+            if (paragraphs.length > 1) {
+                // Take second paragraph if exists, otherwise last
+                bestPart = paragraphs[1] || paragraphs[paragraphs.length - 1];
+            }
+            if (bestPart.length > 250) {
+                bestPart = bestPart.substring(0, 247) + '...';
+            }
+
+            // Truncate question if needed
+            if (userQuestion.length > 80) {
+                userQuestion = userQuestion.substring(0, 77) + '...';
+            }
 
             // Create canvas
             const canvas = document.createElement('canvas');
@@ -494,85 +503,107 @@
             canvas.height = 1920;
             const ctx = canvas.getContext('2d');
 
-            // Cream background
-            ctx.fillStyle = '#FFFBF5';
+            // Claude-inspired warm background
+            ctx.fillStyle = '#FAF9F7';
             ctx.fillRect(0, 0, 1080, 1920);
 
-            // Orange accent bar top
-            ctx.fillStyle = '#F97316';
-            ctx.fillRect(0, 0, 1080, 12);
+            // Header bar
+            ctx.fillStyle = '#F5F3EF';
+            ctx.fillRect(0, 0, 1080, 140);
 
-            // Gus avatar circle
-            ctx.fillStyle = '#F97316';
+            // Header avatar
+            ctx.fillStyle = '#D97706';
             ctx.beginPath();
-            ctx.arc(540, 340, 100, 0, Math.PI * 2);
+            ctx.arc(100, 70, 40, 0, Math.PI * 2);
             ctx.fill();
 
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 72px Georgia, serif';
+            ctx.font = 'bold 32px -apple-system, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('G', 540, 340);
+            ctx.fillText('G', 100, 70);
 
-            // Name
+            // Header title
             ctx.fillStyle = '#1a1a1a';
-            ctx.font = 'bold 56px Georgia, serif';
+            ctx.font = '600 36px -apple-system, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Gus Ahab', 160, 60);
+
+            ctx.fillStyle = '#22c55e';
+            ctx.font = '24px -apple-system, sans-serif';
+            ctx.fillText('● Online', 160, 95);
+
+            // USER MESSAGE BUBBLE (right side, orange)
+            ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
-            ctx.fillText('Gus Ahab', 540, 520);
 
-            // User question in quotes
-            ctx.fillStyle = '#888888';
-            ctx.font = 'italic 32px Georgia, serif';
-            ctx.fillText('"' + userQuestion + '"', 540, 620);
+            const userBubbleWidth = Math.min(ctx.measureText(userQuestion).width + 80, 800);
+            const userBubbleX = 1080 - userBubbleWidth - 60;
+            const userBubbleY = 250;
 
-            // Answer box
-            ctx.fillStyle = '#FFFFFF';
-            roundRect(ctx, 90, 700, 900, 800, 24);
+            // Draw user bubble
+            ctx.fillStyle = '#D97706';
+            roundRect(ctx, userBubbleX, userBubbleY, userBubbleWidth, 80, 24);
             ctx.fill();
-            ctx.strokeStyle = '#F0E6D9';
-            ctx.lineWidth = 3;
-            roundRect(ctx, 90, 700, 900, 800, 24);
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '32px -apple-system, sans-serif';
+            ctx.fillText(userQuestion, userBubbleX + 30, userBubbleY + 52);
+
+            // GUS MESSAGE BUBBLE (left side, white)
+            const gusLines = wrapText(ctx, bestPart, 700, '32px -apple-system, sans-serif');
+            const gusBubbleHeight = gusLines.length * 48 + 60;
+            const gusBubbleY = userBubbleY + 140;
+
+            // Gus avatar
+            ctx.fillStyle = '#D97706';
+            ctx.beginPath();
+            ctx.arc(90, gusBubbleY + 40, 35, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 28px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('G', 90, gusBubbleY + 40);
+
+            // Draw Gus bubble
+            ctx.fillStyle = '#FFFFFF';
+            roundRect(ctx, 150, gusBubbleY, 800, gusBubbleHeight, 24);
+            ctx.fill();
+
+            // Bubble border
+            ctx.strokeStyle = '#E8E4DE';
+            ctx.lineWidth = 2;
+            roundRect(ctx, 150, gusBubbleY, 800, gusBubbleHeight, 24);
             ctx.stroke();
 
-            // Answer text with word wrap
-            ctx.fillStyle = '#2a2a2a';
-            ctx.font = '40px Georgia, serif';
+            // Gus text
+            ctx.fillStyle = '#1a1a1a';
+            ctx.font = '32px -apple-system, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
 
-            const words = gusAnswer.split(' ');
-            let line = '';
-            let y = 800;
-            const lineHeight = 58;
-
-            for (const word of words) {
-                const test = line + word + ' ';
-                if (ctx.measureText(test).width > 800 && line) {
-                    ctx.fillText(line.trim(), 540, y);
-                    line = word + ' ';
-                    y += lineHeight;
-                    if (y > 1350) break;
-                } else {
-                    line = test;
-                }
+            let textY = gusBubbleY + 50;
+            for (const line of gusLines) {
+                ctx.fillText(line, 180, textY);
+                textY += 48;
             }
-            if (line && y <= 1350) ctx.fillText(line.trim(), 540, y);
 
-            // "Read more" CTA
-            ctx.fillStyle = '#F97316';
-            ctx.font = 'bold 32px Georgia, serif';
-            ctx.fillText('Baca selengkapnya ↓', 540, 1420);
+            // Footer watermark
+            ctx.fillStyle = '#D97706';
+            ctx.font = 'bold 36px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('gusahab.com', 540, 1800);
 
-            // Footer
-            ctx.fillStyle = '#F97316';
-            ctx.font = 'bold 48px Georgia, serif';
-            ctx.fillText('gusahab.com', 540, 1760);
-
-            ctx.fillStyle = '#aaaaaa';
-            ctx.font = '28px Georgia, serif';
-            ctx.fillText('Tanya apa aja, Gus jawab!', 540, 1820);
+            ctx.fillStyle = '#999999';
+            ctx.font = '26px -apple-system, sans-serif';
+            ctx.fillText('Chat dengan Gus Ahab sekarang!', 540, 1860);
 
             // Download
             const a = document.createElement('a');
-            a.download = 'gus-ahab.png';
+            a.download = 'gus-ahab-chat.png';
             a.href = canvas.toDataURL('image/png');
             a.click();
 
@@ -592,6 +623,26 @@
             ctx.lineTo(x, y + r);
             ctx.quadraticCurveTo(x, y, x + r, y);
             ctx.closePath();
+        }
+
+        // Helper for text wrapping
+        function wrapText(ctx, text, maxWidth, font) {
+            ctx.font = font;
+            const words = text.split(' ');
+            const lines = [];
+            let line = '';
+
+            for (const word of words) {
+                const test = line + word + ' ';
+                if (ctx.measureText(test).width > maxWidth && line) {
+                    lines.push(line.trim());
+                    line = word + ' ';
+                } else {
+                    line = test;
+                }
+            }
+            if (line) lines.push(line.trim());
+            return lines;
         }
 
         // New Chat

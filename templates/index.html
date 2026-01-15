@@ -458,8 +458,35 @@
 
         // Generate Share Image for Instagram Story
         window.generateShareImage = async (btn) => {
-            const messageContainer = btn.closest('.bg-white');
-            const messageText = messageContainer.querySelector('.prose-custom').innerText;
+            // Find user question and Gus answer
+            const chatContainer = document.getElementById('chatArea');
+            const messages = chatContainer.querySelectorAll(':scope > div');
+            const botMessageDiv = btn.closest('.flex.justify-start').parentElement;
+            const botIndex = Array.from(messages).indexOf(botMessageDiv);
+
+            let userQuestion = 'Pertanyaan untuk Gus...';
+            let gusAnswer = '';
+
+            // Get previous message (user's question)
+            if (botIndex > 0) {
+                const userDiv = messages[botIndex - 1];
+                const userBubble = userDiv.querySelector('.bg-stone-900');
+                if (userBubble) {
+                    userQuestion = userBubble.innerText.trim();
+                }
+            }
+
+            // Get Gus's answer
+            const answerEl = btn.closest('.bg-white').querySelector('.prose-custom');
+            if (answerEl) {
+                gusAnswer = answerEl.innerText.trim();
+            }
+
+            // Truncate for hook effect
+            const maxQ = 50;
+            const maxA = 200;
+            if (userQuestion.length > maxQ) userQuestion = userQuestion.substring(0, maxQ-3) + '...';
+            if (gusAnswer.length > maxA) gusAnswer = gusAnswer.substring(0, maxA-3) + '...';
 
             // Create canvas
             const canvas = document.createElement('canvas');
@@ -467,82 +494,104 @@
             canvas.height = 1920;
             const ctx = canvas.getContext('2d');
 
-            // Background gradient (Instagram story size)
-            const gradient = ctx.createLinearGradient(0, 0, 1080, 1920);
-            gradient.addColorStop(0, '#1a1a2e');
-            gradient.addColorStop(1, '#16213e');
-            ctx.fillStyle = gradient;
+            // Cream background
+            ctx.fillStyle = '#FFFBF5';
             ctx.fillRect(0, 0, 1080, 1920);
 
-            // Add decorative elements
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+            // Orange accent bar top
+            ctx.fillStyle = '#F97316';
+            ctx.fillRect(0, 0, 1080, 12);
+
+            // Gus avatar circle
+            ctx.fillStyle = '#F97316';
             ctx.beginPath();
-            ctx.arc(900, 300, 200, 0, Math.PI * 2);
+            ctx.arc(540, 340, 100, 0, Math.PI * 2);
             ctx.fill();
 
-            // Title
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 48px Arial';
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 72px Georgia, serif';
             ctx.textAlign = 'center';
-            ctx.fillText('Gus Ahab', 540, 200);
+            ctx.textBaseline = 'middle';
+            ctx.fillText('G', 540, 340);
 
-            // Subtitle
+            // Name
+            ctx.fillStyle = '#1a1a1a';
+            ctx.font = 'bold 56px Georgia, serif';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText('Gus Ahab', 540, 520);
+
+            // User question in quotes
             ctx.fillStyle = '#888888';
-            ctx.font = '28px Arial';
-            ctx.fillText('Wisdom in Gus Baha Style', 540, 260);
+            ctx.font = 'italic 32px Georgia, serif';
+            ctx.fillText('"' + userQuestion + '"', 540, 620);
 
-            // Quote box
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.roundRect(80, 400, 920, 1000, 30);
+            // Answer box
+            ctx.fillStyle = '#FFFFFF';
+            roundRect(ctx, 90, 700, 900, 800, 24);
             ctx.fill();
+            ctx.strokeStyle = '#F0E6D9';
+            ctx.lineWidth = 3;
+            roundRect(ctx, 90, 700, 900, 800, 24);
+            ctx.stroke();
 
-            // Message text (word wrap)
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '36px Arial';
-            ctx.textAlign = 'left';
+            // Answer text with word wrap
+            ctx.fillStyle = '#2a2a2a';
+            ctx.font = '40px Georgia, serif';
 
-            const words = messageText.split(' ');
+            const words = gusAnswer.split(' ');
             let line = '';
-            let y = 500;
-            const maxWidth = 840;
-            const lineHeight = 50;
+            let y = 800;
+            const lineHeight = 58;
 
-            for (let word of words) {
-                const testLine = line + word + ' ';
-                const metrics = ctx.measureText(testLine);
-                if (metrics.width > maxWidth && line !== '') {
-                    ctx.fillText(line.trim(), 120, y);
+            for (const word of words) {
+                const test = line + word + ' ';
+                if (ctx.measureText(test).width > 800 && line) {
+                    ctx.fillText(line.trim(), 540, y);
                     line = word + ' ';
                     y += lineHeight;
-                    if (y > 1300) {
-                        ctx.fillText('...', 120, y);
-                        break;
-                    }
+                    if (y > 1350) break;
                 } else {
-                    line = testLine;
+                    line = test;
                 }
             }
-            if (y <= 1300) {
-                ctx.fillText(line.trim(), 120, y);
-            }
+            if (line && y <= 1350) ctx.fillText(line.trim(), 540, y);
+
+            // "Read more" CTA
+            ctx.fillStyle = '#F97316';
+            ctx.font = 'bold 32px Georgia, serif';
+            ctx.fillText('Baca selengkapnya ↓', 540, 1420);
 
             // Footer
-            ctx.fillStyle = '#f97316';
-            ctx.font = 'bold 32px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('gusahab.com', 540, 1750);
+            ctx.fillStyle = '#F97316';
+            ctx.font = 'bold 48px Georgia, serif';
+            ctx.fillText('gusahab.com', 540, 1760);
 
-            ctx.fillStyle = '#666666';
-            ctx.font = '24px Arial';
-            ctx.fillText('Tanya Gus Ahab apa aja!', 540, 1800);
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '28px Georgia, serif';
+            ctx.fillText('Tanya apa aja, Gus jawab!', 540, 1820);
 
-            // Download the image
-            const link = document.createElement('a');
-            link.download = 'gus-ahab-wisdom.png';
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+            // Download
+            const a = document.createElement('a');
+            a.download = 'gus-ahab.png';
+            a.href = canvas.toDataURL('image/png');
+            a.click();
 
-            alert('Gambar sudah didownload! Upload ke Instagram Story kamu ✨');
+            alert('Gambar siap! Upload ke Instagram Story ✨');
+        };
+
+        // Helper for rounded rectangles
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
         }
 
         // New Chat

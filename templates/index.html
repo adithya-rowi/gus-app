@@ -457,6 +457,7 @@
         }
 
         // Generate Share Image for Instagram Story - Matches actual app UI exactly
+        // Scale factor: 2.25x (480px app → 1080px canvas)
         window.generateShareImage = async (btn) => {
             const chatContainer = document.getElementById('chatArea');
             const messages = chatContainer.querySelectorAll(':scope > div');
@@ -482,12 +483,25 @@
             }
 
             // Truncate for story format
-            if (userQuestion.length > 100) {
-                userQuestion = userQuestion.substring(0, 97) + '...';
+            if (userQuestion.length > 120) {
+                userQuestion = userQuestion.substring(0, 117) + '...';
             }
-            if (gusAnswer.length > 350) {
-                gusAnswer = gusAnswer.substring(0, 347) + '...';
+            if (gusAnswer.length > 300) {
+                gusAnswer = gusAnswer.substring(0, 297) + '...';
             }
+
+            // Load avatar image first
+            const avatarImg = new Image();
+            avatarImg.crossOrigin = 'anonymous';
+
+            avatarImg.onload = () => drawShareImage(avatarImg, userQuestion, gusAnswer);
+            avatarImg.onerror = () => drawShareImage(null, userQuestion, gusAnswer);
+            avatarImg.src = '/static/gus-avatar.png';
+        };
+
+        function drawShareImage(avatarImg, userQuestion, gusAnswer) {
+            // === SCALE FACTOR: 2.25x (480px app width → 1080px canvas) ===
+            const S = 2.25;
 
             // Create canvas - Instagram Story size
             const canvas = document.createElement('canvas');
@@ -497,158 +511,186 @@
 
             // === EXACT APP COLORS (Tailwind stone palette) ===
             const colors = {
-                stone50: '#fafaf9',   // bg-stone-50 (body background)
-                stone100: '#f5f5f4',  // border-stone-100
-                stone800: '#292524',  // text-stone-800
-                stone900: '#1c1917',  // bg-stone-900 (user bubble)
+                stone50: '#fafaf9',   // body background
+                stone100: '#f5f5f4',  // borders
+                stone500: '#78716c',  // footer text
+                stone800: '#292524',  // gus text
+                stone900: '#1c1917',  // user bubble
                 white: '#ffffff'
             };
 
-            // Background - matches body bg-stone-50
+            // === BACKGROUND ===
             ctx.fillStyle = colors.stone50;
             ctx.fillRect(0, 0, 1080, 1920);
 
-            // App container - white rounded rectangle (simulating sm:rounded-[40px])
+            // === APP CONTAINER ===
+            // 60px margin from edges, 90px border radius (40px × 2.25)
+            const containerX = 60;
+            const containerY = 60;
+            const containerW = 960;
+            const containerH = 1800;
+            const containerR = 90;
+
             ctx.fillStyle = colors.white;
-            roundRect(ctx, 40, 100, 1000, 1720, 80);
+            roundRect(ctx, containerX, containerY, containerW, containerH, containerR);
             ctx.fill();
             ctx.strokeStyle = colors.stone100;
             ctx.lineWidth = 2;
-            roundRect(ctx, 40, 100, 1000, 1720, 80);
+            roundRect(ctx, containerX, containerY, containerW, containerH, containerR);
             ctx.stroke();
 
-            // === HEADER (glass-header style) ===
+            // === HEADER (140px height) ===
+            const headerH = 140;
             ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-            roundRectTop(ctx, 40, 100, 1000, 140, 80);
+            roundRectTop(ctx, containerX, containerY, containerW, headerH, containerR);
             ctx.fill();
 
-            // Header avatar - 80px circle (scaled from 40px in app)
+            // Header avatar - 90px (40px × 2.25), position 40px from left
+            const headerAvatarX = containerX + 40 + 45; // 40px margin + 45px (half of 90px)
+            const headerAvatarY = containerY + headerH / 2;
+            const headerAvatarR = 45; // 90px diameter / 2
+
             ctx.save();
             ctx.beginPath();
-            ctx.arc(140, 170, 40, 0, Math.PI * 2);
+            ctx.arc(headerAvatarX, headerAvatarY, headerAvatarR, 0, Math.PI * 2);
             ctx.closePath();
             ctx.clip();
-            // Avatar fallback gradient (matches .avatar-fallback)
-            const avatarGrad = ctx.createLinearGradient(100, 130, 180, 210);
-            avatarGrad.addColorStop(0, '#92400e');
-            avatarGrad.addColorStop(1, '#78350f');
-            ctx.fillStyle = avatarGrad;
-            ctx.fillRect(100, 130, 80, 80);
-            ctx.fillStyle = colors.white;
-            ctx.font = 'bold 40px Inter, -apple-system, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('🕌', 140, 170);
+
+            if (avatarImg) {
+                ctx.drawImage(avatarImg, headerAvatarX - headerAvatarR, headerAvatarY - headerAvatarR, 90, 90);
+            } else {
+                // Fallback gradient
+                const grad = ctx.createLinearGradient(headerAvatarX - headerAvatarR, headerAvatarY - headerAvatarR, headerAvatarX + headerAvatarR, headerAvatarY + headerAvatarR);
+                grad.addColorStop(0, '#92400e');
+                grad.addColorStop(1, '#78350f');
+                ctx.fillStyle = grad;
+                ctx.fillRect(headerAvatarX - headerAvatarR, headerAvatarY - headerAvatarR, 90, 90);
+                ctx.fillStyle = colors.white;
+                ctx.font = 'bold 40px Inter, -apple-system, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('G', headerAvatarX, headerAvatarY);
+            }
             ctx.restore();
 
-            // Header title - font-display font-bold text-lg text-stone-900
+            // Header title - "Gus Ahab" - 40px font, 600 weight
             ctx.fillStyle = colors.stone900;
-            ctx.font = 'bold 36px "Plus Jakarta Sans", Inter, -apple-system, sans-serif';
+            ctx.font = '600 40px Inter, -apple-system, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText('Gus Ahab', 200, 170);
+            ctx.fillText('Gus Ahab', headerAvatarX + headerAvatarR + 20, headerAvatarY);
 
-            // === USER MESSAGE BUBBLE (right-aligned, bg-stone-900) ===
-            const userFont = '30px Inter, -apple-system, sans-serif';
+            // === USER MESSAGE BUBBLE (right-aligned) ===
+            const userFont = '34px Inter, -apple-system, sans-serif';
             ctx.font = userFont;
-            const userLines = wrapText(ctx, userQuestion, 700, userFont);
-            const userBubbleHeight = userLines.length * 42 + 56;
+            const userMaxWidth = containerW * 0.85 - 90; // 85% max width minus padding
+            const userLines = wrapText(ctx, userQuestion, userMaxWidth - 90, userFont);
+            const userLineHeight = 46;
+            const userPadX = 45;
+            const userPadY = 32;
+            const userBubbleHeight = userLines.length * userLineHeight + userPadY * 2;
             const userBubbleWidth = Math.min(
-                Math.max(...userLines.map(l => ctx.measureText(l).width)) + 80,
-                850
+                Math.max(...userLines.map(l => ctx.measureText(l).width)) + userPadX * 2,
+                containerW * 0.85
             );
-            const userBubbleX = 990 - userBubbleWidth;
-            const userBubbleY = 320;
+            const userBubbleX = containerX + containerW - 40 - userBubbleWidth; // 40px from right
+            const userBubbleY = containerY + headerH + 50;
 
-            // User bubble - bg-stone-900, rounded-[20px] rounded-tr-sm
+            // Draw user bubble - #1c1917, 45px radius, 4px top-right
             ctx.fillStyle = colors.stone900;
-            roundRectChat(ctx, userBubbleX, userBubbleY, userBubbleWidth, userBubbleHeight, 40, 'user');
+            roundRectChat(ctx, userBubbleX, userBubbleY, userBubbleWidth, userBubbleHeight, 45, 'user');
             ctx.fill();
 
-            // Shadow for user bubble
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-            ctx.shadowBlur = 10;
-            ctx.shadowOffsetY = 4;
-
-            // User text - text-white text-[15px]
+            // User text - white, 34px
             ctx.fillStyle = colors.white;
             ctx.font = userFont;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
-            let userTextY = userBubbleY + 38;
+            let userTextY = userBubbleY + userPadY + 28;
             for (const line of userLines) {
-                ctx.fillText(line, userBubbleX + 40, userTextY);
-                userTextY += 42;
+                ctx.fillText(line, userBubbleX + userPadX, userTextY);
+                userTextY += userLineHeight;
             }
-            ctx.shadowColor = 'transparent';
 
             // === GUS MESSAGE BUBBLE (left-aligned with avatar) ===
-            const gusBubbleY = userBubbleY + userBubbleHeight + 48;
+            const gusBubbleStartY = userBubbleY + userBubbleHeight + 40;
 
-            // Gus avatar - w-8 h-8 (64px scaled)
+            // Gus avatar - 72px (32px × 2.25)
+            const gusAvatarX = containerX + 40 + 36; // 40px margin + 36px (half of 72px)
+            const gusAvatarY = gusBubbleStartY + 50;
+            const gusAvatarR = 36;
+
             ctx.save();
             ctx.beginPath();
-            ctx.arc(130, gusBubbleY + 64, 32, 0, Math.PI * 2);
+            ctx.arc(gusAvatarX, gusAvatarY, gusAvatarR, 0, Math.PI * 2);
             ctx.closePath();
             ctx.clip();
-            const gusAvatarGrad = ctx.createLinearGradient(98, 32, 162, 96);
-            gusAvatarGrad.addColorStop(0, '#92400e');
-            gusAvatarGrad.addColorStop(1, '#78350f');
-            ctx.fillStyle = gusAvatarGrad;
-            ctx.fillRect(98, gusBubbleY + 32, 64, 64);
-            ctx.fillStyle = colors.white;
-            ctx.font = '28px Inter, -apple-system, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('🕌', 130, gusBubbleY + 64);
+
+            if (avatarImg) {
+                ctx.drawImage(avatarImg, gusAvatarX - gusAvatarR, gusAvatarY - gusAvatarR, 72, 72);
+            } else {
+                const grad = ctx.createLinearGradient(gusAvatarX - gusAvatarR, gusAvatarY - gusAvatarR, gusAvatarX + gusAvatarR, gusAvatarY + gusAvatarR);
+                grad.addColorStop(0, '#92400e');
+                grad.addColorStop(1, '#78350f');
+                ctx.fillStyle = grad;
+                ctx.fillRect(gusAvatarX - gusAvatarR, gusAvatarY - gusAvatarR, 72, 72);
+                ctx.fillStyle = colors.white;
+                ctx.font = 'bold 32px Inter, -apple-system, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('G', gusAvatarX, gusAvatarY);
+            }
             ctx.restore();
 
-            // "Gus" label - text-xs font-semibold text-stone-900
+            // "Gus" label - 27px font, 600 weight
+            const gusBubbleX = gusAvatarX + gusAvatarR + 27; // 27px gap
             ctx.fillStyle = colors.stone900;
-            ctx.font = '600 24px Inter, -apple-system, sans-serif';
+            ctx.font = '600 27px Inter, -apple-system, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
-            ctx.fillText('Gus', 180, gusBubbleY + 20);
+            ctx.fillText('Gus', gusBubbleX, gusBubbleStartY + 24);
 
-            // Gus bubble - bg-white border border-stone-100 rounded-[20px] rounded-tl-sm
-            const gusFont = '30px Inter, -apple-system, sans-serif';
+            // Gus bubble
+            const gusFont = '34px Inter, -apple-system, sans-serif';
             ctx.font = gusFont;
-            const gusLines = wrapText(ctx, gusAnswer, 680, gusFont);
-            const gusBubbleHeight = gusLines.length * 42 + 64;
+            const gusMaxWidth = containerW - (gusBubbleX - containerX) - 60;
+            const gusLines = wrapText(ctx, gusAnswer, gusMaxWidth - 90, gusFont);
+            const gusLineHeight = 46;
+            const gusPadX = 45;
+            const gusPadY = 36;
+            const gusBubbleHeight = gusLines.length * gusLineHeight + gusPadY * 2;
             const gusBubbleWidth = Math.min(
-                Math.max(...gusLines.map(l => ctx.measureText(l).width)) + 80,
-                800
+                Math.max(...gusLines.map(l => ctx.measureText(l).width)) + gusPadX * 2,
+                gusMaxWidth
             );
-            const gusBubbleX = 180;
-            const gusBubbleContentY = gusBubbleY + 36;
+            const gusBubbleContentY = gusBubbleStartY + 40;
 
-            // Bubble background
+            // Draw Gus bubble - white bg, #f5f5f4 border, 45px radius, 4px top-left
             ctx.fillStyle = colors.white;
-            roundRectChat(ctx, gusBubbleX, gusBubbleContentY, gusBubbleWidth, gusBubbleHeight, 40, 'bot');
+            roundRectChat(ctx, gusBubbleX, gusBubbleContentY, gusBubbleWidth, gusBubbleHeight, 45, 'bot');
             ctx.fill();
-
-            // Bubble border - border border-stone-100
             ctx.strokeStyle = colors.stone100;
             ctx.lineWidth = 2;
-            roundRectChat(ctx, gusBubbleX, gusBubbleContentY, gusBubbleWidth, gusBubbleHeight, 40, 'bot');
+            roundRectChat(ctx, gusBubbleX, gusBubbleContentY, gusBubbleWidth, gusBubbleHeight, 45, 'bot');
             ctx.stroke();
 
-            // Gus text - text-[15px] text-stone-800
+            // Gus text - #292524, 34px
             ctx.fillStyle = colors.stone800;
             ctx.font = gusFont;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
-            let gusTextY = gusBubbleContentY + 42;
+            let gusTextY = gusBubbleContentY + gusPadY + 28;
             for (const line of gusLines) {
-                ctx.fillText(line, gusBubbleX + 40, gusTextY);
-                gusTextY += 42;
+                ctx.fillText(line, gusBubbleX + gusPadX, gusTextY);
+                gusTextY += gusLineHeight;
             }
 
-            // === FOOTER WATERMARK ===
-            ctx.fillStyle = '#a8a29e'; // stone-400
-            ctx.font = '28px Inter, -apple-system, sans-serif';
+            // === FOOTER ===
+            ctx.fillStyle = colors.stone500;
+            ctx.font = '32px Inter, -apple-system, sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('gusahab.com', 540, 1760);
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText('gusahab.com', 540, 1920 - 60);
 
             // Download
             const a = document.createElement('a');
@@ -657,7 +699,7 @@
             a.click();
 
             alert('Gambar siap! Upload ke Instagram Story ✨');
-        };
+        }
 
         // Rounded rectangle helper
         function roundRect(ctx, x, y, w, h, r) {
@@ -688,12 +730,11 @@
         }
 
         // Chat bubble with tail (small corner on one side)
-        // type: 'user' = small top-right, 'bot' = small top-left
+        // type: 'user' = small top-right (4px), 'bot' = small top-left (4px)
         function roundRectChat(ctx, x, y, w, h, r, type) {
-            const smallR = 4; // rounded-tr-sm or rounded-tl-sm
+            const smallR = 4;
             ctx.beginPath();
             if (type === 'user') {
-                // User: rounded-[20px] rounded-tr-sm (small top-right)
                 ctx.moveTo(x + r, y);
                 ctx.lineTo(x + w - smallR, y);
                 ctx.quadraticCurveTo(x + w, y, x + w, y + smallR);
@@ -704,7 +745,6 @@
                 ctx.lineTo(x, y + r);
                 ctx.quadraticCurveTo(x, y, x + r, y);
             } else {
-                // Bot: rounded-[20px] rounded-tl-sm (small top-left)
                 ctx.moveTo(x + smallR, y);
                 ctx.lineTo(x + w - r, y);
                 ctx.quadraticCurveTo(x + w, y, x + w, y + r);

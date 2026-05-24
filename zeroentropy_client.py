@@ -1,18 +1,34 @@
 """
-Ragie Client - Retrieves relevant context from Gus Baha knowledge base.
-Includes source metadata for citations.
-Supports: YouTube videos, books, Hawa's Blog PDFs
+ZeroEntropy Client - Retrieves relevant context from the Gus Baha knowledge base.
+
+Drop-in replacement for ragie_client.py. Exposes the SAME three public functions
+so generator.py only needs its import line changed:
+
+    retrieve_context(query, top_k)        -> list[dict]
+    format_context_for_prompt(chunks)     -> str
+    get_unique_sources(chunks)            -> list[dict]
+
+Retrieval uses ZeroEntropy's end-to-end search engine (top_snippets) with the
+zerank-2 reranker. zembed-1 + zerank-2 are natively multilingual, so the old
+Indonesian->English keyword-expansion / parallel-search hack from ragie_client.py
+is no longer needed and has been removed. If retrieval quality ever regresses,
+that is the first place to look.
 """
 
 import os
 import re
-import requests
-from concurrent.futures import ThreadPoolExecutor
 
-RAGIE_API_KEY = os.environ.get("RAGIE_API_KEY")
-RAGIE_BASE_URL = "https://api.ragie.ai"
+try:
+    from zeroentropy import ZeroEntropy
+except ImportError:  # pragma: no cover
+    ZeroEntropy = None
 
-# Source metadata for citations
+# Collection populated by ingest.py
+COLLECTION_NAME = os.environ.get("ZEROENTROPY_COLLECTION", "gus-baha")
+# Reranker applied on top of retrieval. zerank-2 is the flagship; zerank-1-small is cheaper.
+RERANKER = os.environ.get("ZEROENTROPY_RERANKER", "zerank-2")
+
+# Source metadata for citations (unchanged from ragie_client.py).
 SOURCES = {
     # ==================
     # YOUTUBE VIDEOS
@@ -31,7 +47,7 @@ SOURCES = {
         "date": "1 Oktober 2025",
         "type": "summary"
     },
-    
+
     # ==================
     # BOOKS - Islam Santuy
     # ==================
@@ -55,7 +71,7 @@ SOURCES = {
     },
 }
 
-# Partial match patterns for flexible source detection
+# Partial match patterns for flexible source detection (unchanged).
 SOURCE_PATTERNS = {
     "IslamSantuy": {
         "title": "Islam Santuy Ala Gus Baha",
@@ -99,19 +115,19 @@ SOURCE_PATTERNS = {
 
 
 def get_source_metadata(document_name: str) -> dict:
-    """Get source metadata for a document."""
+    """Get source metadata for a document (unchanged from ragie_client.py)."""
     if not document_name:
         return _default_source()
-    
+
     # Try exact match first
     if document_name in SOURCES:
         return SOURCES[document_name]
-    
+
     # Try partial match on full path/name
     for key, value in SOURCES.items():
         if key in document_name or document_name in key:
             return value
-    
+
     # Special handling for Hawa's Blog PDFs
     doc_lower = document_name.lower()
     if "hawa" in doc_lower or "hawa's blog" in doc_lower:
@@ -124,7 +140,7 @@ def get_source_metadata(document_name: str) -> dict:
         title = title.replace("_", " ").strip()
         # Capitalize nicely
         title = title.title()
-        
+
         return {
             "title": title,
             "url": None,
@@ -132,12 +148,12 @@ def get_source_metadata(document_name: str) -> dict:
             "author": "Syaikh al-'Izz bin Abdus Salam",
             "type": "book"
         }
-    
+
     # Try pattern matching
     for pattern, meta in SOURCE_PATTERNS.items():
         if pattern.lower() in doc_lower:
             return meta
-    
+
     # Default fallback
     return _default_source()
 
@@ -151,134 +167,79 @@ def _default_source() -> dict:
     }
 
 
-def retrieve_context(query: str, top_k: int = 6) -> list[dict]:
+# --- Lazy ZeroEntropy client -------------------------------------------------
+
+_zclient = None
+
+
+def _get_client():
+    """Instantiate the ZeroEntropy client once, lazily. Returns None if unavailable."""
+    global _zclient
+    if _zclient is not None:
+        return _zclient
+    if ZeroEntropy is None:
+        print("Warning: zeroentropy package not installed (pip install zeroentropy)")
+        return None
+    if not os.environ.get("ZEROENTROPY_API_KEY"):
+        print("Warning: ZEROENTROPY_API_KEY not set")
+        return None
+    _zclient = ZeroEntropy()
+    return _zclient
+
+
+def retrieve_context(query: str, top_k: int = 6) -> list:
     """
-    Retrieve relevant chunks from Ragie with bilingual support.
-    Searches in both original language and English keywords simultaneously.
+    Retrieve the most relevant snippets from ZeroEntropy for `query`.
+
+    Returns a list of dicts shaped exactly like the old Ragie output:
+        {"text": str, "score": float, "document_name": str, "source": dict}
+    Returns [] on any failure so the caller can degrade gracefully.
     """
-    if not RAGIE_API_KEY:
-        print("Warning: RAGIE_API_KEY not set")
+    zclient = _get_client()
+    if zclient is None:
         return []
-    
-    headers = {
-        "Authorization": f"Bearer {RAGIE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    def search_ragie(search_query: str, num_results: int) -> list[dict]:
-        """Helper function to search Ragie."""
-        payload = {
-            "query": search_query,
-            "top_k": num_results,
-            "partition": "gus-baha"
-        }
-        try:
-            response = requests.post(
-                f"{RAGIE_BASE_URL}/retrievals",
-                headers=headers,
-                json=payload,
-                timeout=10
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("scored_chunks", [])
-        except requests.exceptions.RequestException as e:
-            print(f"Ragie retrieval error: {e}")
-            return []
-    
-    # Create English keywords from common Indonesian religious terms
-    indo_to_eng = {
-        'ikhlas': 'sincerity', 'dosa': 'sin forgiveness', 'taubat': 'repentance',
-        'sabar': 'patience', 'syukur': 'gratitude', 'takut': 'fear',
-        'mati': 'death', 'sholat': 'prayer', 'solat': 'prayer', 'puasa': 'fasting',
-        'sedekah': 'charity', 'rezeki': 'sustenance', 'doa': 'supplication',
-        'ampun': 'forgiveness mercy', 'surga': 'paradise', 'neraka': 'hell',
-        'akhirat': 'afterlife', 'hati': 'heart soul', 'iman': 'faith',
-        'ibadah': 'worship', 'dzikir': 'remembrance', 'gelisah': 'anxiety',
-        'tenang': 'peace calm', 'sedih': 'sadness grief', 'maaf': 'forgiveness',
-        'ujian': 'trial test', 'cobaan': 'hardship', 'hidayah': 'guidance',
-        'berkah': 'blessing', 'ridho': 'acceptance', 'tawakkal': 'trust God',
-        'allah': 'God Allah', 'tuhan': 'God Lord', 'nabi': 'prophet',
-        'munafik': 'hypocrite hypocrisy', 'riya': 'showing off',
-        'sombong': 'arrogance pride', 'rendah': 'humble', 'cinta': 'love',
-        'bersyukur': 'grateful', 'khusyuk': 'focus concentration',
-        'malu': 'shame shy', 'tobat': 'repent', 'zina': 'adultery',
-        'ghibah': 'backbiting gossip', 'hasad': 'envy jealousy',
-        'dendam': 'grudge revenge', 'marah': 'anger angry',
-        'bahagia': 'happiness happy', 'tentram': 'tranquil peaceful'
-    }
-    
-    # Build English query from Indonesian terms found
-    query_lower = query.lower()
-    english_terms = []
-    for indo, eng in indo_to_eng.items():
-        if indo in query_lower:
-            english_terms.append(eng)
-    
-    # If we found Indonesian terms, create English query
-    if english_terms:
-        english_query = " ".join(english_terms)
-    else:
-        english_query = None
-    
-    # Run searches in PARALLEL (no extra delay!)
-    all_chunks = []
-    
-    if english_query:
-        # Search both languages simultaneously
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            future_original = executor.submit(search_ragie, query, top_k // 2 + 1)
-            future_english = executor.submit(search_ragie, english_query, top_k // 2 + 1)
-            
-            chunks_original = future_original.result()
-            chunks_english = future_english.result()
-        
-        all_chunks = chunks_original + chunks_english
-    else:
-        # No Indonesian terms found, just search original
-        all_chunks = search_ragie(query, top_k)
-    
-    # Deduplicate by text content (keep higher score)
-    seen_texts = {}
-    for chunk in all_chunks:
-        text = chunk.get("text", "")[:200]  # First 200 chars as key
-        score = chunk.get("score", 0)
-        if text not in seen_texts or score > seen_texts[text].get("score", 0):
-            seen_texts[text] = chunk
-    
-    # Sort by score and take top_k
-    unique_chunks = sorted(seen_texts.values(), key=lambda x: x.get("score", 0), reverse=True)[:top_k]
-    
-    # Add source metadata
+
+    # top_snippets k must be between 1 and 128.
+    k = max(1, min(int(top_k), 128))
+
+    try:
+        response = zclient.queries.top_snippets(
+            collection_name=COLLECTION_NAME,
+            query=query[:4096],  # API hard limit on query length
+            k=k,
+            reranker=RERANKER,
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"ZeroEntropy retrieval error: {e}")
+        return []
+
     results = []
-    for chunk in unique_chunks:
-        doc_name = chunk.get("document_name", "unknown")
-        source_meta = get_source_metadata(doc_name)
-        
+    for r in getattr(response, "results", []):
+        # `path` was set to the bare filename at ingest time; basename() is
+        # defensive in case a path-style value slips through.
+        doc_name = os.path.basename(getattr(r, "path", "") or "")
         results.append({
-            "text": chunk.get("text", ""),
-            "score": chunk.get("score", 0),
+            "text": getattr(r, "content", "") or "",
+            "score": getattr(r, "score", 0.0) or 0.0,
             "document_name": doc_name,
-            "source": source_meta
+            "source": get_source_metadata(doc_name),
         })
-    
     return results
 
 
-def format_context_for_prompt(chunks: list[dict], max_chars: int = 3000) -> str:
-    """Format retrieved chunks into a context string for the LLM."""
+def format_context_for_prompt(chunks: list, max_chars: int = 3000) -> str:
+    """Format retrieved chunks into a context string for the LLM (unchanged)."""
     if not chunks:
         return ""
-    
+
     context_parts = []
     total_chars = 0
-    
+
     for i, chunk in enumerate(chunks, 1):
         text = chunk.get("text", "").strip()
-        doc_name = chunk.get("document_name", "unknown")
         source = chunk.get("source", {})
         source_type = source.get("type", "unknown")
-        
+
         # Determine label based on source type
         if source_type == "book":
             book_name = source.get("book", "Buku")
@@ -289,38 +250,38 @@ def format_context_for_prompt(chunks: list[dict], max_chars: int = 3000) -> str:
             label = "NGAJI GUS BAHA"
         else:
             label = "SUMBER"
-        
+
         # Truncate if too long
         if len(text) > 800:
             text = text[:800] + "..."
-        
+
         block = f"[{label} {i}]\n{text}"
-        
+
         if total_chars + len(block) > max_chars:
             break
-            
+
         context_parts.append(block)
         total_chars += len(block)
-    
+
     return "\n\n".join(context_parts)
 
 
-def get_unique_sources(chunks: list[dict]) -> list[dict]:
-    """Extract unique sources from chunks for citation display."""
+def get_unique_sources(chunks: list) -> list:
+    """Extract unique sources from chunks for citation display (unchanged)."""
     seen_titles = set()
     unique_sources = []
-    
+
     for chunk in chunks:
         source = chunk.get("source", {})
         title = source.get("title", "")
         source_type = source.get("type", "unknown")
-        
+
         # Create unique key based on title (for books without URL)
         unique_key = title or source.get("url", "") or source.get("book", "")
-        
+
         if unique_key and unique_key not in seen_titles:
             seen_titles.add(unique_key)
-            
+
             # Build citation based on source type
             if source_type == "book":
                 unique_sources.append({
@@ -339,5 +300,5 @@ def get_unique_sources(chunks: list[dict]) -> list[dict]:
                     "date": source.get("date", ""),
                     "type": source_type
                 })
-    
+
     return unique_sources

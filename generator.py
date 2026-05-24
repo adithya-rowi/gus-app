@@ -8,7 +8,7 @@ import os
 from openai import OpenAI
 
 from persona import SYSTEM_PROMPT, FEW_SHOTS
-from ragie_client import retrieve_context, format_context_for_prompt, get_unique_sources
+from zeroentropy_client import retrieve_context, format_context_for_prompt, get_unique_sources
 
 client = OpenAI(
     api_key=os.environ.get("DEEPSEEK_API_KEY"),

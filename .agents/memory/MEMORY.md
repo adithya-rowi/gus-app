@@ -1,0 +1,1 @@
+- [Cohere index rebuild pacing](cohere-index-rebuild-pacing.md) — Large full-index builds may need paced embedding calls on trial-rate API keys.

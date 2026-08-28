@@ -1,34 +1,37 @@
 """
-ZeroEntropy Client - Retrieves relevant context from the Gus Baha knowledge base.
+Local Cohere-backed retrieval for the Gus Baha knowledge base.
 
-Drop-in replacement for ragie_client.py. Exposes the SAME three public functions
-so generator.py only needs its import line changed:
+Exposes the same three public functions expected by generator.py:
 
     retrieve_context(query, top_k)        -> list[dict]
     format_context_for_prompt(chunks)     -> str
     get_unique_sources(chunks)            -> list[dict]
-
-Retrieval uses ZeroEntropy's end-to-end search engine (top_snippets) with the
-zerank-2 reranker. zembed-1 + zerank-2 are natively multilingual, so the old
-Indonesian->English keyword-expansion / parallel-search hack from ragie_client.py
-is no longer needed and has been removed. If retrieval quality ever regresses,
-that is the first place to look.
 """
 
+import json
 import os
 import re
 
 try:
-    from zeroentropy import ZeroEntropy
+    import cohere
 except ImportError:  # pragma: no cover
-    ZeroEntropy = None
+    cohere = None
 
-# Collection populated by ingest.py
-COLLECTION_NAME = os.environ.get("ZEROENTROPY_COLLECTION", "gus-baha")
-# Reranker applied on top of retrieval. zerank-2 is the flagship; zerank-1-small is cheaper.
-RERANKER = os.environ.get("ZEROENTROPY_RERANKER", "zerank-2")
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    np = None
 
-# Source metadata for citations (unchanged from ragie_client.py).
+# Index files produced by build_index.py
+INDEX_PATH = os.environ.get("KB_INDEX_PATH", "kb_index.npz")
+CHUNKS_PATH = os.environ.get("KB_CHUNKS_PATH", "kb_chunks.json")
+
+EMBED_MODEL = os.environ.get("COHERE_EMBED_MODEL", "embed-multilingual-v3.0")
+RERANK_MODEL = os.environ.get("COHERE_RERANK_MODEL", "rerank-v3.5")
+# How many nearest neighbours to hand the reranker.
+CANDIDATE_POOL = int(os.environ.get("KB_CANDIDATE_POOL", "40"))
+
+# Source metadata for citations (unchanged from zeroentropy_client.py).
 SOURCES = {
     # ==================
     # YOUTUBE VIDEOS
@@ -115,7 +118,7 @@ SOURCE_PATTERNS = {
 
 
 def get_source_metadata(document_name: str) -> dict:
-    """Get source metadata for a document (unchanged from ragie_client.py)."""
+    """Get source metadata for a document (unchanged from zeroentropy_client.py)."""
     if not document_name:
         return _default_source()
 
@@ -167,60 +170,117 @@ def _default_source() -> dict:
     }
 
 
-# --- Lazy ZeroEntropy client -------------------------------------------------
+# --- Lazy client + index ------------------------------------------------------
 
-_zclient = None
+_co = None
+_vectors = None      # (n_chunks, dim) float32, L2-normalised
+_chunks = None       # list of {"text", "document_name"}
 
 
 def _get_client():
-    """Instantiate the ZeroEntropy client once, lazily. Returns None if unavailable."""
-    global _zclient
-    if _zclient is not None:
-        return _zclient
-    if ZeroEntropy is None:
-        print("Warning: zeroentropy package not installed (pip install zeroentropy)")
+    """Instantiate the Cohere client once, lazily. Returns None if unavailable."""
+    global _co
+    if _co is not None:
+        return _co
+    if cohere is None:
+        print("Warning: cohere package not installed (pip install cohere)")
         return None
-    if not os.environ.get("ZEROENTROPY_API_KEY"):
-        print("Warning: ZEROENTROPY_API_KEY not set")
+    if not os.environ.get("COHERE_API_KEY"):
+        print("Warning: COHERE_API_KEY not set")
         return None
-    _zclient = ZeroEntropy()
-    return _zclient
+    _co = cohere.ClientV2(api_key=os.environ["COHERE_API_KEY"])
+    return _co
+
+
+def _load_index():
+    """Load the embedding matrix and chunk texts once. Returns False if missing."""
+    global _vectors, _chunks
+    if _vectors is not None and _chunks is not None:
+        return True
+    if np is None:
+        print("Warning: numpy not installed (pip install numpy)")
+        return False
+    if not (os.path.exists(INDEX_PATH) and os.path.exists(CHUNKS_PATH)):
+        print("Warning: index not found (%s / %s). Run: python build_index.py"
+              % (INDEX_PATH, CHUNKS_PATH))
+        return False
+    try:
+        with np.load(INDEX_PATH) as data:
+            _vectors = data["vectors"]
+        with open(CHUNKS_PATH, "r", encoding="utf-8") as f:
+            _chunks = json.load(f)
+    except Exception as e:  # noqa: BLE001
+        print("Index load error: %s" % e)
+        _vectors, _chunks = None, None
+        return False
+    if len(_chunks) != _vectors.shape[0]:
+        print("Warning: index/chunks length mismatch (%d vs %d) - rebuild the index."
+              % (_vectors.shape[0], len(_chunks)))
+        _vectors, _chunks = None, None
+        return False
+    return True
 
 
 def retrieve_context(query: str, top_k: int = 6) -> list:
     """
-    Retrieve the most relevant snippets from ZeroEntropy for `query`.
+    Retrieve the most relevant snippets for `query`.
 
-    Returns a list of dicts shaped exactly like the old Ragie output:
+    Returns a list of dicts shaped exactly like the old ZeroEntropy output:
         {"text": str, "score": float, "document_name": str, "source": dict}
     Returns [] on any failure so the caller can degrade gracefully.
     """
-    zclient = _get_client()
-    if zclient is None:
+    co = _get_client()
+    if co is None or not _load_index():
         return []
 
-    # top_snippets k must be between 1 and 128.
+    q = (query or "").strip()[:4096]
+    if not q:
+        return []
+
     k = max(1, min(int(top_k), 128))
 
+    # 1) Embed the query and take the nearest neighbours by cosine similarity.
     try:
-        response = zclient.queries.top_snippets(
-            collection_name=COLLECTION_NAME,
-            query=query[:4096],  # API hard limit on query length
-            k=k,
-            reranker=RERANKER,
-        )
+        resp = co.embed(texts=[q], model=EMBED_MODEL,
+                        input_type="search_query", embedding_types=["float"])
+        qvec = np.asarray(resp.embeddings.float_[0], dtype="float32")
     except Exception as e:  # noqa: BLE001
-        print(f"ZeroEntropy retrieval error: {e}")
+        print("Cohere embed error: %s" % e)
         return []
 
+    qnorm = np.linalg.norm(qvec)
+    if qnorm < 1e-9:
+        return []
+    qvec = qvec / qnorm
+
+    sims = _vectors @ qvec              # rows are already normalised
+    pool = min(CANDIDATE_POOL, sims.shape[0])
+    top_idx = np.argpartition(-sims, pool - 1)[:pool]
+    top_idx = top_idx[np.argsort(-sims[top_idx])]
+
+    candidates = [(int(i), float(sims[i])) for i in top_idx]
+
+    # 2) Rerank the pool. If reranking fails, fall back to raw similarity order.
+    try:
+        ranked = co.rerank(
+            model=RERANK_MODEL,
+            query=q,
+            documents=[_chunks[i]["text"] for i, _ in candidates],
+            top_n=min(k, len(candidates)),
+        )
+        ordered = [(candidates[r.index][0], float(r.relevance_score))
+                   for r in ranked.results]
+    except Exception as e:  # noqa: BLE001
+        print("Cohere rerank error (falling back to similarity order): %s" % e)
+        ordered = candidates[:k]
+
     results = []
-    for r in getattr(response, "results", []):
-        # `path` was set to the bare filename at ingest time; basename() is
-        # defensive in case a path-style value slips through.
-        doc_name = os.path.basename(getattr(r, "path", "") or "")
+    for idx, score in ordered:
+        chunk = _chunks[idx]
+        doc_name = chunk.get("document_name", "")
         results.append({
-            "text": getattr(r, "content", "") or "",
-            "score": getattr(r, "score", 0.0) or 0.0,
+            "text": chunk.get("text", ""),
+            "score": score,
             "document_name": doc_name,
             "source": get_source_metadata(doc_name),
         })

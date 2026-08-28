@@ -10,8 +10,9 @@ chatbot, NOT a fatwa service**. The persona must never claim to be the real
 Gus Baha and must never invent personal details about him.
 
 Stack: Python **Flask** backend · **DeepSeek** LLM (`deepseek-chat`, via the
-OpenAI SDK pointed at `api.deepseek.com`) · **ZeroEntropy** for RAG retrieval ·
-vanilla HTML/CSS/JS frontend (mobile-first).
+OpenAI SDK pointed at `api.deepseek.com`) · **Cohere** (`embed-multilingual-v3.0`
++ `rerank-v3.5`) with a repo-local index for RAG retrieval · vanilla
+HTML/CSS/JS frontend (mobile-first).
 
 ## Request flow
 
@@ -19,7 +20,7 @@ vanilla HTML/CSS/JS frontend (mobile-first).
 2. `generate_response()` (generator.py):
    - `detect_language()` picks `id` or `en`.
    - Selects the matching system prompt + few-shot examples.
-   - Retrieves RAG context via `zeroentropy_client.retrieve_context()`.
+  - Retrieves RAG context via `retrieval.retrieve_context()`.
    - Builds messages: system prompt + few-shots + recent history + user
      message (with retrieved context inlined).
    - Calls DeepSeek, strips markdown, runs off-topic "redirect" detection.
@@ -32,23 +33,26 @@ vanilla HTML/CSS/JS frontend (mobile-first).
 - `generator.py` — core logic: language detection, prompt assembly, DeepSeek
   call, RAG orchestration. Holds the English prompt/few-shots inline.
 - `persona.py` — `SYSTEM_PROMPT` and `FEW_SHOTS` (Indonesian).
-- `zeroentropy_client.py` — RAG retrieval against ZeroEntropy. Citation
+- `retrieval.py` — Cohere-backed retrieval over the repo-local index. Citation
   metadata lives in the `SOURCES` dict + `SOURCE_PATTERNS`.
 - `critic.py` — optional tone-validator (`validate_response`). **Currently
   dormant** — not wired into the request flow.
-- `ingest.py` — one-time script to upload the knowledge base to ZeroEntropy.
+- `build_index.py` — builds the local search index from `kb_export/originals/`.
 - `ragie_export.py` — one-off tool to pull source files out of the legacy
   Ragie.ai account. Transitional; remove after migration is verified.
-- `ragie_client.py` — legacy RAG client (Ragie.ai). Being retired; kept as a
-  fallback until ZeroEntropy is verified, then deleted.
+- `ragie_client.py` — legacy RAG client (Ragie.ai), retained only for historical
+  reference.
 - `static/`, `templates/` — frontend assets.
 
 ## Environment variables
 
 - `DEEPSEEK_API_KEY` — required (LLM).
-- `ZEROENTROPY_API_KEY` — required (RAG).
-- `ZEROENTROPY_COLLECTION` — optional, default `gus-baha`.
-- `ZEROENTROPY_RERANKER` — optional, default `zerank-2`.
+- `COHERE_API_KEY` — required (RAG).
+- `KB_INDEX_PATH` — optional, default `kb_index.npz`.
+- `KB_CHUNKS_PATH` — optional, default `kb_chunks.json`.
+- `COHERE_EMBED_MODEL` — optional, default `embed-multilingual-v3.0`.
+- `COHERE_RERANK_MODEL` — optional, default `rerank-v3.5`.
+- `KB_CANDIDATE_POOL` — optional, default `40`.
 - `RAGIE_API_KEY` — legacy; only used by `ragie_export.py`.
 - `PORT` — optional, default `5000`.
 
@@ -63,15 +67,15 @@ gunicorn --bind 0.0.0.0:5000 main:app
 
 ## RAG / knowledge base
 
-- ZeroEntropy collection `gus-baha`, queried with `top_snippets` + the
-  `zerank-2` reranker.
-- Populate or refresh it with `python ingest.py` (reads `attached_assets/`).
+- Cohere embeddings and reranking run over the repo-local index files.
+- Knowledge base source files live in `kb_export/originals/`.
+- Rebuild the index with `python build_index.py`.
 - Citations are matched by **document filename** → keep filenames stable and
   meaningful, since `get_source_metadata()` keys off them.
 
 ## Conventions & gotchas
 
-- `zeroentropy_client.py` MUST keep its three-function contract:
+- `retrieval.py` MUST keep its three-function contract:
   `retrieve_context`, `format_context_for_prompt`, `get_unique_sources`.
   `generator.py` depends on the exact shapes. Each retrieved chunk is a dict:
   `{text, score, document_name, source}`.
@@ -84,6 +88,4 @@ gunicorn --bind 0.0.0.0:5000 main:app
 
 - Do not commit API keys or `.env`.
 - Do not change the `retrieve_context` return shape.
-- Do not delete `ragie_client.py` or `ragie_export.py` until the ZeroEntropy
-  migration is fully verified.
 - Do not let the persona claim to be the real Gus Baha or give a fatwa.

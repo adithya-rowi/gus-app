@@ -31,7 +31,7 @@ RERANK_MODEL = os.environ.get("COHERE_RERANK_MODEL", "rerank-v3.5")
 # How many nearest neighbours to hand the reranker.
 CANDIDATE_POOL = int(os.environ.get("KB_CANDIDATE_POOL", "40"))
 
-# Source metadata for citations (unchanged from zeroentropy_client.py).
+# Source metadata for citations.
 SOURCES = {
     # ==================
     # YOUTUBE VIDEOS
@@ -117,47 +117,90 @@ SOURCE_PATTERNS = {
 }
 
 
+YOUTUBE_ID_RE = re.compile(r"^gus_(?P<slug>.+)_(?P<vid>[A-Za-z0-9_-]{11})\.(?:md|txt)$")
+
+# Every PDF here comes from Hawa's Blog (a translation of Syajaratul Ma'arif).
+# Filenames arrived with apostrophes rewritten as "_".
+HAWA_BOOK = {
+    "book": "Syajaratul Ma'arif",
+    "author": "Syaikh al-'Izz bin Abdus Salam",
+}
+
+_SMALL_WORDS = {"a", "an", "and", "the", "of", "to", "in", "on", "for",
+                "with", "at", "by", "or", "be", "is", "it", "so"}
+
+
+def _smart_title(text: str) -> str:
+    """Title-case without str.title()'s mangling of apostrophes (Don't -> Don'T)."""
+    words = text.split()
+    out = []
+    for i, w in enumerate(words):
+        if not w:
+            continue
+        if i and w.lower() in _SMALL_WORDS:
+            out.append(w.lower())
+        elif w[0].islower():
+            out.append(w[0].upper() + w[1:])
+        else:
+            out.append(w)
+    return " ".join(out)
+
+
+def _restore_apostrophes(text: str) -> str:
+    """'don_t' -> "don't" - underscores stood in for apostrophes in filenames."""
+    return re.sub(r"([A-Za-z])_(s|t|re|ve|ll|d)\b", r"\1'\2", text)
+
+
 def get_source_metadata(document_name: str) -> dict:
-    """Get source metadata for a document (unchanged from zeroentropy_client.py)."""
+    """Map a document filename to citation metadata."""
     if not document_name:
         return _default_source()
 
-    # Try exact match first
-    if document_name in SOURCES:
-        return SOURCES[document_name]
+    name = os.path.basename(document_name)
 
-    # Try partial match on full path/name
-    for key, value in SOURCES.items():
-        if key in document_name or document_name in key:
-            return value
+    # 1) Hand-curated entries win.
+    if name in SOURCES:
+        return SOURCES[name]
 
-    # Special handling for Hawa's Blog PDFs
-    doc_lower = document_name.lower()
-    if "hawa" in doc_lower or "hawa's blog" in doc_lower:
-        # Extract article title from filename
-        # e.g., "don't be harsh _ Hawa's Blog.PDF" -> "Don't Be Harsh"
-        title = document_name
-        # Remove common suffixes
-        title = re.sub(r"[_\s]*Hawa'?s?\s*Blog\.PDF", "", title, flags=re.IGNORECASE)
-        title = re.sub(r"\.pdf$", "", title, flags=re.IGNORECASE)
-        title = title.replace("_", " ").strip()
-        # Capitalize nicely
-        title = title.title()
-
+    # 2) YouTube transcripts: gus_<slug>_<11-char video id>.md
+    m = YOUTUBE_ID_RE.match(name)
+    if m:
+        slug = m.group("slug").replace("-", " ").replace("_", " ")
         return {
-            "title": title,
-            "url": None,
-            "book": "Syajaratul Ma'arif",
-            "author": "Syaikh al-'Izz bin Abdus Salam",
-            "type": "book"
+            "title": _smart_title(slug.strip()),
+            "url": "https://www.youtube.com/watch?v=%s" % m.group("vid"),
+            "channel": "YouTube",
+            "date": None,
+            "type": "video",
         }
 
-    # Try pattern matching
+    # 3) Hawa's Blog PDFs - every PDF in this collection is one.
+    if name.lower().endswith(".pdf"):
+        title = re.sub(r"\.pdf$", "", name, flags=re.IGNORECASE)
+        title = re.sub(r"[\s_]*[-|_]?[\s_]*Hawa[_'\u2019]?s?\s*Blog\s*$", "",
+                       title, flags=re.IGNORECASE)
+        title = _restore_apostrophes(title).replace("_", " ")
+        title = re.sub(r"\s+", " ", title).strip(" -|")
+        meta = {
+            "title": _smart_title(title) or "Hawa's Blog",
+            "url": None,
+            "type": "book",
+            "pages": "",
+        }
+        meta.update(HAWA_BOOK)
+        return meta
+
+    # 4) Substring match against the curated table.
+    for key, value in SOURCES.items():
+        if key in name or name in key:
+            return value
+
+    # 5) Pattern fallbacks.
+    lowered = name.lower()
     for pattern, meta in SOURCE_PATTERNS.items():
-        if pattern.lower() in doc_lower:
+        if pattern.lower() in lowered:
             return meta
 
-    # Default fallback
     return _default_source()
 
 
@@ -225,7 +268,7 @@ def retrieve_context(query: str, top_k: int = 6) -> list:
     """
     Retrieve the most relevant snippets for `query`.
 
-    Returns a list of dicts shaped exactly like the old ZeroEntropy output:
+    Returns a list of dicts shaped like the legacy retrieval output:
         {"text": str, "score": float, "document_name": str, "source": dict}
     Returns [] on any failure so the caller can degrade gracefully.
     """
